@@ -1,0 +1,8 @@
+# Normaliza terminadores de linha. O repositorio guarda LF sempre.
+# Sem isso, o shell script quebra no bash e os arquivos de config
+# entram com CRLF nos containers Linux.
+* text=auto eol=lf
+*.sh  text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.conf text eol=lf

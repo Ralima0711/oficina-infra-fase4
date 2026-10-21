@@ -1,0 +1,123 @@
+# Stack de desenvolvimento — Tech Challenge SOAT Fase 4 · Grupo 77
+#
+# Sobe tudo que os tres microsservicos precisam para rodar na maquina:
+# RabbitMQ (com as filas do contrato ja declaradas), dois Postgres,
+# dois Mongo e um Redis. Cada servico tem o seu banco; nada e compartilhado.
+#
+#   docker compose up -d
+#   docker compose ps
+#
+# Painel do RabbitMQ: http://localhost:15672  (guest / guest)
+
+name: oficina-fase4
+
+services:
+
+  # ---------------------------------------------------------------- mensageria
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: oficina-rabbitmq
+    ports:
+      - "5672:5672"     # AMQP — e por aqui que os servicos conversam
+      - "15672:15672"   # painel web
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [oficina]
+
+  # ------------------------------------------------------------- OS Service
+  os-postgres:
+    image: postgres:16-alpine
+    container_name: oficina-os-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: os_service
+      POSTGRES_USER: os_service
+      POSTGRES_PASSWORD: os_service
+    volumes:
+      - os_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U os_service -d os_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [oficina]
+
+  os-mongo:
+    image: mongo:7
+    container_name: oficina-os-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: os_read_model
+    volumes:
+      - os_mongo_data:/data/db
+    networks: [oficina]
+
+  # -------------------------------------------------------- Billing Service
+  billing-postgres:
+    image: postgres:16-alpine
+    container_name: oficina-billing-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: billing_service
+      POSTGRES_USER: billing_service
+      POSTGRES_PASSWORD: billing_service
+    volumes:
+      - billing_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing_service -d billing_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [oficina]
+
+  # ------------------------------------------------------- Execucao Service
+  execucao-redis:
+    image: redis:7-alpine
+    container_name: oficina-execucao-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - execucao_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [oficina]
+
+  execucao-mongo:
+    image: mongo:7
+    container_name: oficina-execucao-mongo
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_DATABASE: execucao_service
+    volumes:
+      - execucao_mongo_data:/data/db
+    networks: [oficina]
+
+networks:
+  oficina:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+  os_pg_data:
+  os_mongo_data:
+  billing_pg_data:
+  execucao_redis_data:
+  execucao_mongo_data:
