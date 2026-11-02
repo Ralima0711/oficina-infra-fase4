@@ -1,0 +1,22 @@
+# Configuracao nao sensivel do Execucao Service.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: execucao-service-config
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: execucao-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: oficina-fase4
+data:
+  REDIS_HOST: "execucao-redis"
+  REDIS_PORT: "6379"
+  MONGO_HOST: "execucao-mongo"
+  MONGO_PORT: "27017"
+  MONGO_DATABASE: "oficina_execucao"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "/"
+  EXCHANGE_EVENTOS: "oficina.eventos"
+  FILA_ENVIAR_EXECUCAO: "execucao.enviar-para-execucao"
+  FILA_CANCELAR_EXECUCAO: "execucao.cancelar-execucao"
