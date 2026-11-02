@@ -94,12 +94,18 @@ morre, e o erro é chato de achar.
 
 Os comandos que estão nos manifestos hoje:
 
-| Deployment | Comando |
-|---|---|
-| `os-service-saga` | `php artisan saga:consumir` |
-| `os-service-projector` | `php artisan readmodel:projetar` |
-| `billing-service-worker` | `php artisan fila:consumir` |
-| `execucao-service-worker` | `php artisan fila:consumir` |
+| Deployment | Comando | Situação |
+|---|---|---|
+| `os-service-saga` | `php artisan saga:consumir` | a confirmar |
+| `os-service-projector` | `php artisan readmodel:projetar` | a confirmar |
+| `billing-service-worker` | `php artisan fila:consumir` | a confirmar |
+| `execucao-service-worker` | `php artisan execucao:consumir` | **confirmado** |
+
+> A Execução já passou por essa conferência e ela pegou um erro: o manifesto dizia
+> `fila:consumir` e o comando real é `execucao:consumir` — o pod subiria e morreria.
+> Na mesma passada apareceu que faltava criar os índices do Mongo, que o `docker-compose`
+> do serviço faz na subida e os manifestos não faziam. Virou `initContainer` na API e no
+> worker. **Os outros dois serviços ainda não passaram por essa conferência.**
 
 ---
 
