@@ -1,0 +1,81 @@
+# Worker da Execucao: consome os comandos do orquestrador e publica os eventos.
+#
+# Deployment separado da API de proposito: quem consome fila nao atende HTTP.
+# Se o consumidor rodasse no mesmo pod da API, o HPA escalaria consumidor por
+# CPU de requisicao web e o processamento da saga ficaria amarrado ao trafego.
+#
+# Replicas fixas em 2: o consumidor e idempotente (contrato v1.0), entao duas
+# instancias lendo a mesma fila e seguro. Escalar por tamanho de fila exigiria
+# KEDA, que esta fora do escopo da fase.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: execucao-service-worker
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: execucao-service
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: execucao-service
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: execucao-service
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: oficina-fase4
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: ralima0711/oficina-execucao-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "fila:consumir"]
+          envFrom:
+            - configMapRef:
+                name: execucao-service-config
+          env:
+            - name: APP_ENV
+              value: production
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: NEW_RELIC_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: observabilidade
+                  key: new-relic-license-key
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-redis-credentials
+                  key: password
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-mongo-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-mongo-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
