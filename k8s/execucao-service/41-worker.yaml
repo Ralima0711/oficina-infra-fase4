@@ -4,9 +4,15 @@
 # Se o consumidor rodasse no mesmo pod da API, o HPA escalaria consumidor por
 # CPU de requisicao web e o processamento da saga ficaria amarrado ao trafego.
 #
-# Replicas fixas em 2: o consumidor e idempotente (contrato v1.0), entao duas
-# instancias lendo a mesma fila e seguro. Escalar por tamanho de fila exigiria
-# KEDA, que esta fora do escopo da fase.
+# Replicas fixas em 2: o consumidor e idempotente (contrato v1.1, regra 1 da
+# Parte 5), entao duas instancias lendo a mesma fila e seguro. Escalar por
+# tamanho de fila exigiria KEDA, que esta fora do escopo da fase.
+#
+# O initContainer cria os indices do Mongo antes de qualquer pod atender. O
+# compose do servico ja fazia isso na subida; os manifestos nao faziam, e sem
+# o indice unico parcial (osId, tipo) duas requisicoes simultaneas gravam a
+# mesma transicao duas vezes. O comando e idempotente, entao rodar em todo pod
+# nao custa nada.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -31,11 +37,37 @@ spec:
         app.kubernetes.io/part-of: oficina-fase4
     spec:
       terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: criar-indices
+          image: ralima0711/oficina-execucao-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "execucao:criar-indices"]
+          envFrom:
+            - configMapRef:
+                name: execucao-service-config
+          env:
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-mongo-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-mongo-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
       containers:
         - name: worker
           image: ralima0711/oficina-execucao-service:latest
           imagePullPolicy: IfNotPresent
-          command: ["php", "artisan", "fila:consumir"]
+          command: ["php", "artisan", "execucao:consumir"]
           envFrom:
             - configMapRef:
                 name: execucao-service-config

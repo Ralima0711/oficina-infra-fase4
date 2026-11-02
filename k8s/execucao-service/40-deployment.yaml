@@ -33,6 +33,34 @@ spec:
         app.kubernetes.io/component: api
         app.kubernetes.io/part-of: oficina-fase4
     spec:
+      # Cria os indices do Mongo antes da API atender, como o compose do servico
+      # faz na subida. Idempotente: rodar em todo pod nao custa nada.
+      initContainers:
+        - name: criar-indices
+          image: ralima0711/oficina-execucao-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "execucao:criar-indices"]
+          envFrom:
+            - configMapRef:
+                name: execucao-service-config
+          env:
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-mongo-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-mongo-credentials
+                  key: password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
       containers:
         - name: api
           image: ralima0711/oficina-execucao-service:latest
