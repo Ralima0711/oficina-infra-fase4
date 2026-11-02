@@ -12,7 +12,7 @@ a aplicar.
 ## Estrutura
 
 ```
-base/                 namespace e RabbitMQ — sobe primeiro, todo mundo depende
+base/                 namespace, RabbitMQ e Kong — sobe primeiro, todo mundo depende
 os-service/           Postgres + Mongo + API + orquestrador + projetor + HPA
 billing-service/      Postgres + API + worker + HPA
 execucao-service/     Redis + Mongo + API + worker + HPA
@@ -181,9 +181,34 @@ Estado atual: **32 recursos em 21 arquivos, 0 inválidos.**
 
 | Falta | Observação |
 |---|---|
-| **Kong** | Gateway herdado da Fase 3 (ADR-0003/0012). Precisa de Deployment, Service `LoadBalancer` e a configuração declarativa com as rotas dos três serviços. As rotas têm que sair do OpenAPI de cada serviço — por isso não foram escritas no escuro. |
-| **Workflow de CI/CD reutilizável** | Com Sonar e o passo de deploy que aplica esta pasta. Nominalmente do Gustavo. |
-| **Migrations na subida** | Hoje o banco sobe vazio. Falta decidir entre `initContainer` e Job de migração. |
+| **Rotas do OS Service no Kong** | Os três prefixos do bloco `os-service` em `base/20-kong.yaml` estão marcados **A CONFIRMAR**: vieram da API da Fase 3 e o serviço novo ainda não existe. Quando existir, é conferir, não inventar. |
+| **Migrations na subida** | Os bancos relacionais sobem vazios. A Execução já resolveu os índices do Mongo com `initContainer`; falta a mesma decisão para as migrations do Postgres do OS e do Billing. |
+
+---
+
+## Kong — o ponto único de entrada
+
+`base/20-kong.yaml`, modo **DB-less**: a configuração inteira vive no ConfigMap,
+versionada. Rota não se cria pelo Admin API — mesma regra das filas do RabbitMQ.
+
+| Prefixo | Vai para | Origem |
+|---|---|---|
+| `/api/ordens-servico`, `/api/clientes`, `/api/veiculos` | OS Service | **a confirmar** |
+| `/api/public/ordens-servico` | OS Service, com **JWT RS256** | **a confirmar** |
+| `/api/orcamentos`, `/api/pagamentos` | Billing | `routes/api.php` |
+| `/api/execucao` | Execução | `routes/api.php` |
+
+O token do cliente é o mesmo RS256 da Fase 3 (ADR-0004/0005): a Lambda assina com
+a privada, o Kong valida com a pública. A chave pública entra por variável de
+ambiente a partir do Secret `os-jwt` — não está no ConfigMap. O guard da aplicação
+continua valendo: o Kong barra token inválido antes de chegar no serviço, e o
+serviço ainda confere o escopo por CPF.
+
+**O Admin API escuta só em `127.0.0.1`.** Kong com Admin API exposto é uma porta
+aberta para reconfigurar o gateway de fora, e em DB-less ele nem precisa existir
+para operar.
+
+O endereço público sai de `kubectl -n oficina get svc kong-proxy`.
 
 ---
 
