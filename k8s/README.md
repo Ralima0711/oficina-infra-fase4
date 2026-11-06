@@ -86,26 +86,29 @@ kubectl -n oficina create secret generic os-jwt --from-file=public-key=jwt-publi
 Estes manifestos assumem três convenções. Se o serviço não seguir, o pod sobe e
 morre, e o erro é chato de achar.
 
-| Convenção assumida | Onde conferir | Quem |
-|---|---|---|
-| `containerPort: 8080` | o `EXPOSE` do `Dockerfile` do serviço | cada um no seu |
-| Endpoint `GET /health` respondendo 200 | é o que a readiness e a liveness chamam | cada um no seu |
-| Comando do worker (`php artisan ...`) | o nome real do comando de consumo | cada um no seu |
+Três convenções dependem do Dockerfile e das rotas de cada serviço. Se alguma não
+bater, o pod sobe e morre, e o erro é chato de achar.
 
-Os comandos que estão nos manifestos hoje:
+| Serviço | Porta | Probe | Worker | Conferido por |
+|---|---|---|---|---|
+| **OS** | 8080 *(a confirmar)* | `/up` *(a confirmar)* | `saga:consumir` · `readmodel:projetar` *(a confirmar)* | — |
+| **Billing** | 8080 ✓ | `/api/health` ✓ | `fila:consumir` ✓ | Gustavo, 04/11 |
+| **Execução** | 8080 ✓ | `/health` ✓ | `execucao:consumir` ✓ | David, 02/11 |
 
-| Deployment | Comando | Situação |
-|---|---|---|
-| `os-service-saga` | `php artisan saga:consumir` | a confirmar |
-| `os-service-projector` | `php artisan readmodel:projetar` | a confirmar |
-| `billing-service-worker` | `php artisan fila:consumir` | a confirmar |
-| `execucao-service-worker` | `php artisan execucao:consumir` | **confirmado** |
+**Essa conferência já pagou duas vezes.**
 
-> A Execução já passou por essa conferência e ela pegou um erro: o manifesto dizia
-> `fila:consumir` e o comando real é `execucao:consumir` — o pod subiria e morreria.
-> Na mesma passada apareceu que faltava criar os índices do Mongo, que o `docker-compose`
-> do serviço faz na subida e os manifestos não faziam. Virou `initContainer` na API e no
-> worker. **Os outros dois serviços ainda não passaram por essa conferência.**
+Na Execução, o manifesto dizia `fila:consumir` e o comando real é `execucao:consumir`
+— o pod subiria e morreria. Na mesma passada apareceu que faltava criar os índices do
+Mongo, que o `docker-compose` do serviço faz na subida e os manifestos não faziam;
+virou `initContainer` na API e no worker.
+
+No Billing, dois erros meus: a probe chamava `GET /health`, que responde **404** porque
+no Laravel a rota vive sob o prefixo `/api`; e o token do Mercado Pago entrava como
+`MERCADOPAGO_ACCESS_TOKEN`, enquanto o `config/services.php` do serviço lê
+`MP_ACCESS_TOKEN`. Os dois foram corrigidos.
+
+O OS Service ainda não passou. A probe usa `/up`, que é a rota de saúde que o
+Laravel 12 já traz na raiz, até o serviço definir a sua.
 
 ---
 

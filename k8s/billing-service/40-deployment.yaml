@@ -4,7 +4,9 @@
 # A tag :latest no repositorio existe so para o manifesto ser aplicavel a mao;
 # o deploy de verdade aponta para a tag do commit.
 #
-# containerPort 8080: tem que casar com o EXPOSE do Dockerfile do servico.
+# containerPort 8080: conferido com o EXPOSE do Dockerfile (Gustavo, 04/11).
+# A probe chama /api/health: no Laravel a rota vive sob o prefixo /api, e
+# GET /health responde 404. Conferido no routes/api.php do servico.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,21 +73,21 @@ spec:
                 secretKeyRef:
                   name: billing-postgres-credentials
                   key: password
-            - name: MERCADOPAGO_ACCESS_TOKEN
+            - name: MP_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: billing-mercadopago
                   key: access-token
           readinessProbe:
             httpGet:
-              path: /health
+              path: /api/health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health
+              path: /api/health
               port: http
             initialDelaySeconds: 30
             periodSeconds: 20

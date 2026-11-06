@@ -4,7 +4,9 @@
 # A tag :latest no repositorio existe so para o manifesto ser aplicavel a mao;
 # o deploy de verdade aponta para a tag do commit.
 #
-# containerPort 8080: tem que casar com o EXPOSE do Dockerfile do servico.
+# containerPort 8080: A CONFIRMAR com o EXPOSE do Dockerfile do servico.
+# A probe usa /up, a rota de saude que o Laravel 12 ja traz na raiz, porque
+# o servico ainda nao define a sua. Trocar por /api/health quando definir.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -88,14 +90,14 @@ spec:
                   key: public-key
           readinessProbe:
             httpGet:
-              path: /health
+              path: /up
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health
+              path: /up
               port: http
             initialDelaySeconds: 30
             periodSeconds: 20
