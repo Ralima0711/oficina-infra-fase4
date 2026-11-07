@@ -74,8 +74,6 @@ on:
         required: false
       SONAR_TOKEN:
         required: false
-      SONAR_ORGANIZATION:
-        required: false
       AWS_ACCESS_KEY_ID:
         required: false
       AWS_SECRET_ACCESS_KEY:
@@ -243,22 +241,24 @@ jobs:
           name: cobertura-${{ inputs.servico }}
           path: build/logs
 
+      # A configuração do scanner vive no sonar-project.properties de cada serviço:
+      # chave do projeto, organização, sources, tests e os caminhos dos relatórios.
+      # Nada disso é segredo, e versionado dá para conferir num diff. Aqui não se
+      # repete nenhum deles — o que muda por serviço mora no serviço.
       - name: Analisar
         uses: SonarSource/sonarqube-scan-action@v4
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
-        with:
-          args: >
-            -Dsonar.projectKey=${{ inputs.sonar-project-key }}
-            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
-            -Dsonar.sources=app
-            -Dsonar.tests=tests
-            -Dsonar.php.coverage.reportPaths=build/logs/clover.xml
-            -Dsonar.php.tests.reportPath=build/logs/junit.xml
 
-      # As três métricas que a Aula 4 destaca — cobertura, complexidade ciclomática
-      # e débito técnico — configuram-se no quality gate, no próprio Sonar.
+      # Das três métricas da Aula 4, duas são condição direta do quality gate:
+      # cobertura e débito técnico (Maintainability Rating). A complexidade
+      # ciclomática NÃO é — no Sonar ela é medida, não rating, e o gate só aceita
+      # rating e percentual. Quem a enforça é a regra php:S1541 (max = 10) no
+      # quality profile: função acima do limite vira issue, issue derruba o
+      # Maintainability Rating, e aí o gate reprova. Detalhes no
+      # docs/sonar-quality-gate.md do oficina-infra-fase4.
+      #
       # Aqui a gente só espera o veredito e falha se ele reprovar.
       - name: Esperar o quality gate
         uses: SonarSource/sonarqube-quality-gate-action@v1
