@@ -1,0 +1,32 @@
+# Configuracao nao sensivel do OS Service.
+# Os nomes de fila vem do contrato-eventos-fase4.md v1.0 — mudar aqui sem
+# mudar o contrato (e o definitions.json) quebra a saga em silencio.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: os-service-config
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: os-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: oficina-fase4
+data:
+  DB_CONNECTION: "pgsql"
+  DB_HOST: "os-postgres"
+  DB_PORT: "5432"
+  DB_DATABASE: "oficina_os"
+  MONGO_HOST: "os-mongo"
+  MONGO_PORT: "27017"
+  MONGO_DATABASE: "oficina_os_read"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "/"
+  EXCHANGE_EVENTOS: "oficina.eventos"
+  FILA_SAGA_EVENTOS: "os.saga.eventos"
+  FILA_READMODEL_EVENTOS: "os.readmodel.eventos"
+  FILA_COMANDO_ORCAMENTO: "billing.gerar-orcamento"
+  FILA_COMANDO_PAGAMENTO: "billing.cobrar-pagamento"
+  FILA_COMANDO_EXECUCAO: "execucao.enviar-para-execucao"
+  FILA_COMPENSA_ORCAMENTO: "billing.anular-orcamento"
+  FILA_COMPENSA_PAGAMENTO: "billing.estornar-pagamento"
+  FILA_COMPENSA_EXECUCAO: "execucao.cancelar-execucao"

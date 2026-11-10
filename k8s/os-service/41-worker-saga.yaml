@@ -1,0 +1,92 @@
+# Worker do orquestrador: consome os.saga.eventos e avanca (ou compensa) a saga.
+#
+# Este e o worker critico: e aqui que a maquina de estados anda e que a
+# compensacao dispara. Replicas fixas em 2 — o consumidor e idempotente pelo
+# messageId (contrato v1.0, Parte 5), entao duas instancias na mesma fila e
+# seguro, e duas instancias e o que sustenta a mitigacao do ADR-0008.
+#
+# Deployment separado da API de proposito: quem consome fila nao atende HTTP.
+# Se rodasse no mesmo pod, o HPA escalaria o orquestrador por CPU de requisicao
+# web e o avanco da saga ficaria amarrado ao trafego do site.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service-saga
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: os-service
+    app.kubernetes.io/component: saga
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: os-service
+      app.kubernetes.io/component: saga
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: os-service
+        app.kubernetes.io/component: saga
+        app.kubernetes.io/part-of: oficina-fase4
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: saga
+          image: ralima0711/oficina-os-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "saga:consumir"]
+          envFrom:
+            - configMapRef:
+                name: os-service-config
+          env:
+            - name: APP_ENV
+              value: production
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: NEW_RELIC_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: observabilidade
+                  key: new-relic-license-key
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: os-postgres-credentials
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: os-postgres-credentials
+                  key: password
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: password
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: os-jwt
+                  key: public-key
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

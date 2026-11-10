@@ -1,0 +1,88 @@
+# Projetor do read model: consome os.readmodel.eventos e escreve no Mongo (CQRS).
+#
+# Separado do worker da saga de proposito. Sao duas responsabilidades com
+# tolerancia a falha diferente: se a projecao do historico travar, o read model
+# fica atrasado — que o ADR-0009 ja assume como consistencia eventual — mas a
+# saga continua andando. No mesmo processo, um erro de projecao pararia a saga.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service-projector
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: os-service
+    app.kubernetes.io/component: projector
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: os-service
+      app.kubernetes.io/component: projector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: os-service
+        app.kubernetes.io/component: projector
+        app.kubernetes.io/part-of: oficina-fase4
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: projector
+          image: ralima0711/oficina-os-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "readmodel:projetar"]
+          envFrom:
+            - configMapRef:
+                name: os-service-config
+          env:
+            - name: APP_ENV
+              value: production
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            - name: NEW_RELIC_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: observabilidade
+                  key: new-relic-license-key
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: os-postgres-credentials
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: os-postgres-credentials
+                  key: password
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: password
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: os-jwt
+                  key: public-key
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
