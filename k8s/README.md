@@ -91,8 +91,8 @@ bater, o pod sobe e morre, e o erro é chato de achar.
 
 | Serviço | Porta | Probe | Worker | Conferido por |
 |---|---|---|---|---|
-| **OS** | 8080 *(a confirmar)* | `/up` *(a confirmar)* | `saga:consumir` · `readmodel:projetar` *(a confirmar)* | — |
-| **Billing** | 8080 ✓ | `/api/health` ✓ | `fila:consumir` ✓ | Gustavo, 04/11 |
+| **OS** | 8080 ✓ | `/up` ✓ | `saga:consumir` · `saga:publicar-outbox` ✓ | Roberta, 09/11 |
+| **Billing** | 8080 ✓ | `/api/health` ✓ | `fila:consumir --fila=…` ✓ | Gustavo, 04/11 · Roberta, 09/11 |
 | **Execução** | 8080 ✓ | `/health` ✓ | `execucao:consumir` ✓ | David, 02/11 |
 
 **Essa conferência já pagou duas vezes.**
@@ -107,8 +107,23 @@ no Laravel a rota vive sob o prefixo `/api`; e o token do Mercado Pago entrava c
 `MERCADOPAGO_ACCESS_TOKEN`, enquanto o `config/services.php` do serviço lê
 `MP_ACCESS_TOKEN`. Os dois foram corrigidos.
 
-O OS Service ainda não passou. A probe usa `/up`, que é a rota de saúde que o
-Laravel 12 já traz na raiz, até o serviço definir a sua.
+O OS Service foi conferido em 09/11, depois que a saga entrou na `main`: o
+`bootstrap/app.php` declara `health: '/up'`, e os dois workers são
+`saga:consumir` (eventos) e `saga:publicar-outbox` (publicação do outbox), em
+Deployments separados. O `saga:consumir-execucao`, que cobria só o passo 4,
+deixou de existir.
+
+**O Billing agora tem dois workers, um por fila.** O acompanhamento do pagamento
+faz polling no gateway dentro do callback do consumidor, e com os padrões
+(`poll_interval_seconds` 30, `poll_max_attempts` 20) o pior caso são dez minutos
+segurando a mensagem. Como o prefetch é 1, num processo só isso segurava a fila
+de `gerar-orcamento` atrás da cobrança. Não travava a saga — o `consultar()`
+desiste no teto e publica `pagamento.recusado` com motivo `timeout` — mas é
+*head-of-line blocking*: a fila de orçamento esperava por uma coisa que não tem
+nada a ver com ela. Em produção é capacidade; na demo parece travamento.
+
+Para isso o `fila:consumir` ganhou a opção `--fila`, e cada Deployment roda a
+sua. Sem a opção o comportamento é o de antes, um processo para as duas.
 
 ---
 
