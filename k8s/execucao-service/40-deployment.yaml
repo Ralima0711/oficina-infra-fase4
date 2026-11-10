@@ -44,6 +44,12 @@ spec:
             - configMapRef:
                 name: execucao-service-config
           env:
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-app-key
+                  key: app-key
             - name: MONGO_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -72,6 +78,12 @@ spec:
             - configMapRef:
                 name: execucao-service-config
           env:
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-app-key
+                  key: app-key
             - name: APP_ENV
               value: production
             - name: RABBITMQ_USER

@@ -13,7 +13,7 @@ a aplicar.
 
 ```
 base/                 namespace, RabbitMQ e Kong — sobe primeiro, todo mundo depende
-os-service/           Postgres + Mongo + API + orquestrador + projetor + HPA
+os-service/           Postgres + API + orquestrador + publicador do outbox + HPA
 billing-service/      Postgres + API + worker + HPA
 execucao-service/     Redis + Mongo + API + worker + HPA
 scripts/              geradores e conferência
@@ -53,10 +53,12 @@ tudo isso se perde junto com o cluster e precisa ser recriado.
 |---|---|---|
 | `rabbitmq-credentials` | `username`, `password` | todos os serviços e o broker |
 | `os-postgres-credentials` | `username`, `password` | OS Service |
-| `os-mongo-credentials` | `username`, `password` | OS Service |
-| `os-jwt` | `public-key` | OS Service (guard `cliente`, ADR-0004/0005 da Fase 3) |
+| `os-app-key` | `app-key` | OS Service (API e os dois workers) |
+| `os-jwt` | `public-key` | **Kong**, para validar o RS256 (ADR-0004/0005 da Fase 3) |
+| `billing-app-key` | `app-key` | Billing (API e os dois workers) |
 | `billing-postgres-credentials` | `username`, `password` | Billing |
 | `billing-mercadopago` | `access-token` | Billing (sandbox) |
+| `execucao-app-key` | `app-key` | Execução (API e worker) |
 | `execucao-redis-credentials` | `password` | Execução |
 | `execucao-mongo-credentials` | `username`, `password` | Execução |
 | `observabilidade` | `new-relic-license-key` | todos os serviços |
@@ -74,6 +76,23 @@ A chave pública do JWT vem de arquivo, não de literal:
 ```bash
 kubectl -n oficina create secret generic os-jwt --from-file=public-key=jwt-public.pem
 ```
+
+As três `app-key` se geram com o próprio artisan, uma por serviço — não se
+reaproveita a mesma chave em dois serviços, pelo mesmo motivo de não se
+reaproveitar senha de banco:
+
+```bash
+for s in os billing execucao; do
+  kubectl -n oficina create secret generic "${s}-app-key" \
+    --from-literal=app-key="$(docker run --rm php:8.4-cli php -r \
+      'echo "base64:".base64_encode(random_bytes(32));')"
+done
+```
+
+> Nenhum manifesto definia `APP_KEY` até 10/11. O Laravel sobe sem ela e só
+> estoura `MissingAppKeyException` quando alguma coisa toca o encrypter — a API
+> responde 500 e o worker morre no meio do consumo. Era o tipo de falha que só
+> aparece no cluster, porque na máquina o `.env` tem a chave.
 
 > Secret não entra em commit, não entra em print e não entra em mensagem de grupo.
 > Se um valor desses vazar num canal qualquer, ele tem que ser rotacionado — não
@@ -133,18 +152,32 @@ Quem consome fila não atende HTTP. Se o consumidor rodasse no mesmo pod da API,
 o HPA escalaria o orquestrador da saga por CPU de requisição web — o avanço da
 saga ficaria amarrado ao tráfego do site, que não tem relação nenhuma com ele.
 
-No OS Service são **dois** workers, não um:
+No OS Service são **dois** workers, e eles não são duas cópias da mesma coisa:
+um só lê do broker e o outro só escreve nele.
 
-- `os-service-saga` consome `os.saga.eventos` e avança ou compensa a saga
-- `os-service-projector` consome `os.readmodel.eventos` e escreve o read model no Mongo
+| Deployment | Comando | O que faz | Réplicas |
+|---|---|---|---|
+| `os-service-saga` | `saga:consumir` | consome `os.saga.eventos` e avança ou compensa a saga | 2 |
+| `os-service-outbox` | `saga:publicar-outbox` | publica no RabbitMQ o que a saga gravou no outbox | **1** |
 
-Separados porque toleram falha de forma diferente. Projeção travada deixa o
-histórico atrasado — que o ADR-0009 já assume como consistência eventual. No mesmo
-processo, um erro de projeção pararia a saga.
+O orquestrador não publica nada: toda saída da saga vai para a tabela
+`saga_outbox` dentro da mesma transação que muda o estado da OS, e sai depois
+pelo publicador. **Sem o `os-service-outbox` a saga grava a intenção e nunca
+publica** — nenhum comando chega ao Billing e a saga para no primeiro passo, sem
+erro em log nenhum. Esse Deployment faltava até 10/11.
 
-Os workers ficam em **2 réplicas fixas**, sem HPA: o consumidor é idempotente pelo
-`messageId` (contrato v1.0, Parte 5), então duas instâncias na mesma fila é seguro.
-Escalar por profundidade de fila exigiria KEDA, que está fora do escopo.
+O consumidor fica em **2 réplicas fixas**, sem HPA: ele é idempotente pelo
+`messageId` (contrato v1.1, Parte 5, regra 1), então duas instâncias na mesma fila
+é seguro. Escalar por profundidade de fila exigiria KEDA, fora do escopo.
+
+O publicador fica em **1 réplica, e isso é uma restrição do código, não uma
+escolha de capacidade**: `OutboxPublisher::publicarPendentes()` seleciona as
+linhas pendentes sem travar linha nenhuma — não há `FOR UPDATE SKIP LOCKED`. Com
+duas réplicas, as duas leem o mesmo lote e publicam a mesma mensagem antes de
+qualquer uma marcar `publicado_em`. Não quebra, porque o consumidor descarta
+`messageId` repetido, mas é tráfego duplicado de graça. Quem quiser escalar o
+publicador mexe no `SELECT` primeiro; subir réplica antes disso é só duplicar
+mensagem.
 
 ---
 
@@ -178,9 +211,52 @@ com nome digitado errado. O serviço sobe, conecta, declara a fila errada e fica
 consumindo uma fila que ninguém publica. A saga para no meio sem log de erro.
 Vale rodar no pipeline.
 
-A única fila do broker sem consumidor é `billing.aguardando-aprovacao`, e isso é
-proposital: é a sala de espera onde a mensagem fica parada até o TTL de 7 dias
-vencer e o dead-letter mandá-la para `billing.aprovacao-expirada` (ADR-0010).
+Duas filas do broker não têm consumidor, por motivos diferentes, e as duas estão
+na lista de exceções do `confere-filas.py` com o motivo escrito ao lado:
+
+- `billing.aguardando-aprovacao` é a sala de espera do ADR-0010: a mensagem fica
+  parada até o TTL de 7 dias vencer e o dead-letter mandá-la para
+  `billing.aprovacao-expirada`. Consumidor nela quebraria o timeout.
+- `os.readmodel.eventos` esperava o projetor do read model, que não existe nesta
+  fase. Como o OS publica `os.cancelada` e `os.finalizada` e os dois casam com o
+  binding `os.*`, ela recebia mensagem e ninguém drenava. Fila assim cresce para
+  sempre e, no limite de memória, o RabbitMQ **bloqueia os publicadores** — a
+  saga dos três serviços pararia junto, e o sintoma não aponta para cá. Virou
+  ring buffer: `x-max-length` 10000, `x-overflow: drop-head`, TTL de 24h. A DLQ
+  dela saiu, porque já não há dead-letter para mandar para lá.
+
+A lista de exceções exige motivo por fila de propósito. Check vermelho crônico
+todo mundo aprende a ignorar, e aí ele deixa de pegar o erro de verdade.
+
+---
+
+## As extensões do PHP que cada imagem precisa
+
+Os três serviços são Laravel sobre a imagem oficial do PHP, e a imagem oficial
+vem enxuta. O que **falta** não aparece ao rodar na máquina (o PHP do
+desenvolvedor já tem tudo) e também não aparece como erro de runtime: aparece
+como o `composer install` do build falhando na checagem de plataforma.
+
+| Serviço | php-amqplib | Exige | Estado |
+|---|---|---|---|
+| **OS** | `v2.8.0` | `ext-bcmath` | adicionada em 10/11 — o Dockerfile não existia |
+| **Billing** | `v3.7.5` | `ext-sockets` | adicionada em 10/11 — **o build não concluía** |
+| **Execução** | `v3.7.5` | `ext-sockets`, `ext-mongodb` | já estava certo |
+
+As duas versões de `php-amqplib` são uma divergência de verdade: o OS está no
+`^2.8` e os outros dois no `^3.7`, e é por isso que as extensões exigidas
+diferem — a 2.8 pede `bcmath`, a 3.7 pede `sockets`. Não é urgente, mas vale
+alinhar na próxima fase em vez de descobrir de novo.
+
+Além dessas, `pcntl` entrou no OS e no Billing. Os dois registram `SIGTERM` para
+terminar a mensagem em curso antes de sair, mas o código está guardado por
+`function_exists()` — sem a extensão ele não quebra, simplesmente não faz nada, e
+o `rollout` do Kubernetes corta o worker no meio do ACK. Era um encerramento
+gracioso escrito e inerte.
+
+E os dois ganharam `.dockerignore`, que também não existia: sem ele o `COPY . .`
+levava o `.env` de desenvolvimento — com credencial de verdade — para dentro da
+imagem.
 
 ---
 
@@ -191,7 +267,12 @@ kubeconform -summary -strict -kubernetes-version 1.30.0 \
   base os-service billing-service execucao-service
 ```
 
-Estado atual: **32 recursos em 21 arquivos, 0 inválidos.**
+Estado atual: **34 recursos em 21 arquivos, 0 inválidos.**
+
+Vale rodar junto a conferência de filas e, desde 10/11, a de variáveis: um
+ConfigMap que declara `EXCHANGE_EVENTOS` para um serviço que lê
+`RABBITMQ_EXCHANGE` passa no `kubeconform` sem reclamar nada e o serviço cai no
+default em silêncio.
 
 ---
 

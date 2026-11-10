@@ -1,0 +1,11 @@
+# O compose le um .env ao lado dele para o MP_ACCESS_TOKEN de sandbox.
+# Token de gateway nao entra em commit.
+.env
+.env.*
+!.env.example
+
+# Secrets do cluster se criam por kubectl, nunca por arquivo versionado.
+*.pem
+*.key
+kubeconfig
+kubeconfig-*

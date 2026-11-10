@@ -136,8 +136,9 @@
       "durable": true,
       "auto_delete": false,
       "arguments": {
-        "x-dead-letter-exchange": "oficina.dlx",
-        "x-dead-letter-routing-key": "dlq.os.readmodel.eventos"
+        "x-max-length": 10000,
+        "x-overflow": "drop-head",
+        "x-message-ttl": 86400000
       }
     },
     {
@@ -205,13 +206,6 @@
     },
     {
       "name": "dlq.os.saga.eventos",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {}
-    },
-    {
-      "name": "dlq.os.readmodel.eventos",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
@@ -335,14 +329,6 @@
       "destination": "dlq.os.saga.eventos",
       "destination_type": "queue",
       "routing_key": "dlq.os.saga.eventos",
-      "arguments": {}
-    },
-    {
-      "source": "oficina.dlx",
-      "vhost": "/",
-      "destination": "dlq.os.readmodel.eventos",
-      "destination_type": "queue",
-      "routing_key": "dlq.os.readmodel.eventos",
       "arguments": {}
     },
     {

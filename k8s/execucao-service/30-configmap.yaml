@@ -9,14 +9,16 @@ metadata:
     app.kubernetes.io/component: api
     app.kubernetes.io/part-of: oficina-fase4
 data:
+  REDIS_CLIENT: "predis"
   REDIS_HOST: "execucao-redis"
   REDIS_PORT: "6379"
-  MONGO_HOST: "execucao-mongo"
-  MONGO_PORT: "27017"
+  # config/mongodb.php le MONGO_URI, nao MONGO_HOST/MONGO_PORT.
+  MONGO_URI: "mongodb://execucao-mongo:27017"
   MONGO_DATABASE: "oficina_execucao"
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   RABBITMQ_VHOST: "/"
-  EXCHANGE_EVENTOS: "oficina.eventos"
-  FILA_ENVIAR_EXECUCAO: "execucao.enviar-para-execucao"
-  FILA_CANCELAR_EXECUCAO: "execucao.cancelar-execucao"
+  # config/rabbitmq.php prefixa tudo com RABBITMQ_.
+  RABBITMQ_EXCHANGE_EVENTOS: "oficina.eventos"
+  RABBITMQ_FILA_ENVIAR: "execucao.enviar-para-execucao"
+  RABBITMQ_FILA_CANCELAR: "execucao.cancelar-execucao"

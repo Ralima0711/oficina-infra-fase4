@@ -23,6 +23,53 @@ docker compose ps
 
 Cada serviço tem o seu banco. **Nenhum acessa o banco de outro** — é regra do enunciado e do contrato.
 
+## Subir os três serviços junto com a infra
+
+O `docker compose up -d` acima sobe só a infraestrutura. Para subir também os
+três serviços e ver uma OS percorrer a saga de ponta a ponta:
+
+```bash
+docker compose --profile app up -d --build
+docker compose --profile app ps
+docker compose --profile app logs -f os-saga os-outbox
+```
+
+Isso exige os quatro repositórios como irmãos no disco, porque o compose constrói
+a partir dos fontes:
+
+```
+Projetos/
+├── oficina-infra-fase4        <- você está aqui
+├── oficina-os-service
+├── oficina-billing-service
+└── oficina-execucao-service
+```
+
+| Container | Porta | O que é |
+|---|---|---|
+| `os-service` | http://localhost:8081 | API do OS |
+| `os-saga` | — | consumidor da saga (`saga:consumir`) |
+| `os-outbox` | — | publicador do outbox (`saga:publicar-outbox`) |
+| `billing-service` | http://localhost:8082 | API do Billing |
+| `billing-orcamento` | — | worker de `gerar-` e `anular-orcamento` |
+| `billing-cobranca` | — | worker de `cobrar-` e `estornar-pagamento` |
+| `execucao-service` | http://localhost:8083 | API da Execução |
+| `execucao-worker` | — | consumidor da Execução |
+
+**Oito containers de aplicação para três serviços**, e isso é de propósito: quem
+consome fila não atende HTTP. É a mesma separação dos Deployments em `k8s/`, e
+rodar com ela aqui é o que faz a demo bater com o cluster.
+
+O Billing precisa do token de sandbox do Mercado Pago para fechar a cobrança.
+Sem ele a stack sobe inteira e a saga vai até o pagamento:
+
+```bash
+MP_ACCESS_TOKEN='TEST-...' docker compose --profile app up -d
+```
+
+> Não coloque o token no `docker-compose.yml`. Ele entra por variável de
+> ambiente ou por um `.env` ao lado do compose, que o `.gitignore` já cobre.
+
 ## A topologia do RabbitMQ é versionada
 
 As filas, exchanges e bindings vêm de `rabbitmq/definitions.json`, carregado no boot.
@@ -47,7 +94,14 @@ Exchange `oficina.eventos`, tipo `topic`.
 | Fila | Recebe |
 |---|---|
 | `os.saga.eventos` | `orcamento.*`, `pagamento.*`, `execucao.*`, `aprovacao.*` — é o que o orquestrador escuta |
-| `os.readmodel.eventos` | `os.*` — alimenta a projeção CQRS do histórico |
+| `os.readmodel.eventos` | `os.*` — alimentaria a projeção CQRS do histórico, **sem consumidor nesta fase** |
+
+O projetor do read model (ADR-0009) não existe ainda, e o OS Service publica
+`os.cancelada` e `os.finalizada`, que casam com `os.*`. Fila ligada ao exchange
+sem ninguém drenando cresce para sempre, e no limite de memória o RabbitMQ
+**bloqueia os publicadores** — a saga dos três serviços para junto. Por isso ela
+é limitada: `x-max-length` 10000 com `drop-head` e TTL de 24h. Quando o projetor
+existir, é tirar o limite; até lá ela não derruba nada.
 
 ### O timeout de aprovação não é job agendado
 

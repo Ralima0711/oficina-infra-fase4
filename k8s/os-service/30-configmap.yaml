@@ -15,18 +15,11 @@ data:
   DB_HOST: "os-postgres"
   DB_PORT: "5432"
   DB_DATABASE: "oficina_os"
-  MONGO_HOST: "os-mongo"
-  MONGO_PORT: "27017"
-  MONGO_DATABASE: "oficina_os_read"
+  # config/messaging.php le RABBITMQ_EXCHANGE, nao EXCHANGE_EVENTOS.
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   RABBITMQ_VHOST: "/"
-  EXCHANGE_EVENTOS: "oficina.eventos"
-  FILA_SAGA_EVENTOS: "os.saga.eventos"
-  FILA_READMODEL_EVENTOS: "os.readmodel.eventos"
-  FILA_COMANDO_ORCAMENTO: "billing.gerar-orcamento"
-  FILA_COMANDO_PAGAMENTO: "billing.cobrar-pagamento"
-  FILA_COMANDO_EXECUCAO: "execucao.enviar-para-execucao"
-  FILA_COMPENSA_ORCAMENTO: "billing.anular-orcamento"
-  FILA_COMPENSA_PAGAMENTO: "billing.estornar-pagamento"
-  FILA_COMPENSA_EXECUCAO: "execucao.cancelar-execucao"
+  RABBITMQ_EXCHANGE: "oficina.eventos"
+  # As filas de comando e de evento sao constantes no Orchestrator e no
+  # ConsumirEventosSaga. Nao ha env para elas, entao nao se declara aqui:
+  # ConfigMap com chave que ninguem le engana quem vier depois.
