@@ -1,0 +1,219 @@
+# Kong como ponto unico de entrada (ADR-0003, herdado da Fase 3, e ADR-0012).
+#
+# Modo DB-less: a configuracao inteira vive no ConfigMap abaixo, versionada.
+# Rota nao se cria pelo Admin API — mesma regra das filas do RabbitMQ.
+#
+# O Admin API escuta SO em 127.0.0.1. Kong com Admin API exposto e uma porta
+# aberta para reconfigurar o gateway de fora; em DB-less ele nem precisa existir
+# para operar.
+#
+# As rotas do Billing e da Execucao saem do routes/api.php de cada um, lidas em
+# 02/11. As do OS Service estao marcadas A CONFIRMAR: o servico ainda nao existe,
+# e o bloco esta escrito para nao precisar ser inventado depois — so conferido.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-declarativo
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: oficina-fase4
+data:
+  kong.yml: |
+    _format_version: "3.0"
+
+    services:
+
+      # ------------------------------------------------------------ OS Service
+      - name: os-service
+        url: http://os-service.oficina.svc.cluster.local:80
+        retries: 3
+        connect_timeout: 5000
+        read_timeout: 60000
+        routes:
+          # A CONFIRMAR quando o OS Service existir: estes sao os prefixos que a
+          # API da Fase 3 usava. Se mudarem no recorte, mudam aqui.
+          - name: os-ordens-servico
+            paths: ["/api/ordens-servico"]
+            strip_path: false
+          - name: os-clientes
+            paths: ["/api/clientes"]
+            strip_path: false
+          - name: os-veiculos
+            paths: ["/api/veiculos"]
+            strip_path: false
+
+          # Rotas do cliente final, autenticadas pelo token RS256 que a Lambda
+          # emite (ADR-0004 e ADR-0005 da Fase 3). O guard da aplicacao continua
+          # valendo: o Kong barra token invalido antes de chegar no servico, e a
+          # aplicacao ainda confere o escopo por CPF.
+          - name: os-area-do-cliente
+            paths: ["/api/public/ordens-servico"]
+            strip_path: false
+            plugins:
+              - name: jwt
+                config:
+                  claims_to_verify: ["exp"]
+                  key_claim_name: iss
+
+      # --------------------------------------------------------------- Billing
+      - name: billing-service
+        url: http://billing-service.oficina.svc.cluster.local:80
+        retries: 3
+        connect_timeout: 5000
+        read_timeout: 60000
+        routes:
+          - name: billing-orcamentos
+            paths: ["/api/orcamentos"]
+            strip_path: false
+          - name: billing-pagamentos
+            paths: ["/api/pagamentos"]
+            strip_path: false
+
+      # -------------------------------------------------------------- Execucao
+      - name: execucao-service
+        url: http://execucao-service.oficina.svc.cluster.local:80
+        retries: 3
+        connect_timeout: 5000
+        read_timeout: 60000
+        routes:
+          - name: execucao-tudo
+            paths: ["/api/execucao"]
+            strip_path: false
+
+    # O token do cliente e assinado em RS256 pela Lambda, que guarda a chave
+    # privada. Aqui entra so a publica, pela env JWT_PUBLIC_KEY, montada do
+    # Secret os-jwt. Chave nenhuma fica neste arquivo.
+    consumers:
+      - username: cliente-oficina
+        jwt_secrets:
+          - key: oficina-lambda-auth
+            algorithm: RS256
+            rsa_public_key: "{vault://env/jwt-public-key}"
+
+    plugins:
+      # Um id por requisicao, propagado ao servico. E o que permite casar um
+      # log do gateway com um log da aplicacao quando algo der errado no video.
+      - name: correlation-id
+        config:
+          header_name: X-Request-Id
+          generator: uuid
+          echo_downstream: true
+
+      - name: cors
+        config:
+          origins: ["*"]
+          methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+          headers: ["Accept", "Content-Type", "Authorization", "X-Request-Id"]
+          credentials: false
+          max_age: 3600
+
+      # Teto generoso: existe para um loop acidental nao derrubar o cluster do
+      # lab, nao para controlar consumo.
+      - name: rate-limiting
+        config:
+          minute: 600
+          policy: local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  # O ponto de entrada publico do sistema. No Learner Lab isto vira um ELB
+  # classico; o endereco sai de `kubectl -n oficina get svc kong-proxy`.
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: kong
+  ports:
+    - name: proxy
+      port: 80
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: kong
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kong
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kong
+        app.kubernetes.io/component: gateway
+        app.kubernetes.io/part-of: oficina-fase4
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.6
+          ports:
+            - name: proxy
+              containerPort: 8000
+            - name: status
+              containerPort: 8100
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong/declarativo/kong.yml
+            - name: KONG_PROXY_LISTEN
+              value: 0.0.0.0:8000
+            - name: KONG_STATUS_LISTEN
+              value: 0.0.0.0:8100
+            # Loopback de proposito: o Admin API nao fica acessivel de fora.
+            - name: KONG_ADMIN_LISTEN
+              value: 127.0.0.1:8001
+            - name: KONG_PROXY_ACCESS_LOG
+              value: /dev/stdout
+            - name: KONG_PROXY_ERROR_LOG
+              value: /dev/stderr
+            - name: KONG_VAULTS
+              value: "env"
+            # Lida como {vault://env/jwt-public-key} no kong.yml.
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: os-jwt
+                  key: public-key
+          volumeMounts:
+            - name: declarativo
+              mountPath: /kong/declarativo
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /status/ready
+              port: status
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: status
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: declarativo
+          configMap:
+            name: kong-declarativo

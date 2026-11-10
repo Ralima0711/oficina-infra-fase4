@@ -1,0 +1,25 @@
+# Configuracao nao sensivel do Billing Service.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: billing-service-config
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: billing-service
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: oficina-fase4
+data:
+  DB_CONNECTION: "pgsql"
+  DB_HOST: "billing-postgres"
+  DB_PORT: "5432"
+  DB_DATABASE: "oficina_billing"
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_VHOST: "/"
+  EXCHANGE_EVENTOS: "oficina.eventos"
+  FILA_GERAR_ORCAMENTO: "billing.gerar-orcamento"
+  FILA_COBRAR_PAGAMENTO: "billing.cobrar-pagamento"
+  FILA_ANULAR_ORCAMENTO: "billing.anular-orcamento"
+  FILA_ESTORNAR_PAGAMENTO: "billing.estornar-pagamento"
+  FILA_APROVACAO_EXPIRADA: "billing.aprovacao-expirada"
+  ORCAMENTO_VALIDADE_DIAS: "7"
