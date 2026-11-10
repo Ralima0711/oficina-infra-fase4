@@ -1,0 +1,396 @@
+# Pipeline reutilizável dos três microsserviços — Fase 4, Grupo 77
+#
+# Vive no oficina-infra-fase4 e é chamado pelos três serviços com `workflow_call`.
+# Um lugar só para mudar o pipeline, em vez de três arquivos que divergem em silêncio.
+#
+# O que ele faz, nesta ordem:
+#   1. testes      — roda a suíte com cobertura e REPROVA abaixo do mínimo
+#   2. sonar       — análise e quality gate (pulado se não houver chave do projeto)
+#   3. imagem      — build e push no Docker Hub (só na main)
+#   4. deploy      — aplica os manifestos no EKS (só na main, e só se pedido)
+#
+# A lição da Fase 3 está no job de deploy: ele NÃO tem ramo silencioso. Se faltar
+# credencial, ele falha com mensagem clara. Na fase passada o job existia nos quatro
+# repositórios, rodava em 4 a 6 segundos, caía no ramo "Inform Minikube Local
+# Deployment" e ninguém percebeu a fase inteira que nada nunca foi aplicado.
+
+name: CI/CD do serviço
+
+on:
+  workflow_call:
+    inputs:
+      servico:
+        description: Nome do serviço, usado nos logs e no nome da imagem.
+        required: true
+        type: string
+      php-version:
+        description: Versão do PHP.
+        required: false
+        type: string
+        default: "8.4"
+      extensoes:
+        description: Extensões do PHP que este serviço precisa.
+        required: false
+        type: string
+        default: "mbstring, pdo_sqlite"
+      cobertura-minima:
+        description: Percentual mínimo de cobertura. Abaixo disso o job falha.
+        required: false
+        type: number
+        default: 80
+      sonar-project-key:
+        description: Chave do projeto no Sonar. Vazio pula a análise.
+        required: false
+        type: string
+        default: ""
+      sonar-host-url:
+        description: URL do Sonar.
+        required: false
+        type: string
+        default: "https://sonarcloud.io"
+      imagem:
+        description: 'Repositório da imagem no Docker Hub, sem a tag. Ex.: ralima0711/oficina-billing-service'
+        required: false
+        type: string
+        default: ""
+      manifestos:
+        description: 'Pasta dos manifestos deste serviço no oficina-infra-fase4. Ex.: k8s/billing-service'
+        required: false
+        type: string
+        default: ""
+      deploy:
+        description: Aplicar no cluster depois do build. Só tem efeito na main.
+        required: false
+        type: boolean
+        default: false
+      regiao-aws:
+        required: false
+        type: string
+        default: "us-east-1"
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
+      SONAR_TOKEN:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      KUBECONFIG:
+        required: false
+
+jobs:
+
+  # ------------------------------------------------------------------ testes
+  testes:
+    name: Testes e cobertura
+    runs-on: ubuntu-latest
+
+    # Os quatro servicos de apoio sobem para todos os repositorios, mesmo que
+    # cada um use so uma parte. Nao da para declarar `services` condicionalmente
+    # a partir de um input, e a alternativa seria um pipeline por servico — que
+    # e exatamente o que este arquivo existe para evitar. Custa ~30s por job.
+    #
+    # Sao os mesmos do docker-compose, para o teste de integracao do nivel 2 da
+    # piramide rodar contra banco de verdade, e nao contra mock.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: oficina
+          POSTGRES_PASSWORD: oficina
+          POSTGRES_DB: oficina_teste
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U oficina"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok'"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      rabbitmq:
+        image: rabbitmq:3.12-management
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q check_running"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_USERNAME: oficina
+      DB_PASSWORD: oficina
+      DB_DATABASE: oficina_teste
+      MONGO_HOST: 127.0.0.1
+      MONGO_PORT: "27017"
+      MONGO_URI: mongodb://127.0.0.1:27017
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      RABBITMQ_HOST: 127.0.0.1
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # O Sonar precisa do histórico para atribuir o código novo ao autor certo.
+          fetch-depth: 0
+
+      - name: Preparar o PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          extensions: ${{ inputs.extensoes }}
+          # pcov em vez de xdebug: mede cobertura e é muito mais rápido.
+          coverage: pcov
+
+      - name: Cache do Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer/files
+          key: composer-${{ inputs.servico }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ inputs.servico }}-
+
+      - name: Instalar dependências
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Preparar o ambiente
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Rodar a suíte com cobertura
+        run: |
+          mkdir -p build/logs
+          php artisan test \
+            --coverage-clover=build/logs/clover.xml \
+            --log-junit=build/logs/junit.xml
+
+      # O gate de verdade é este, não o do Sonar. Vale mesmo sem Sonar configurado,
+      # e falha aqui em vez de falhar num serviço externo.
+      - name: Conferir a cobertura mínima
+        env:
+          MINIMA: ${{ inputs.cobertura-minima }}
+        run: |
+          python3 - <<'PY'
+          import os, sys, xml.etree.ElementTree as ET
+
+          minima = float(os.environ["MINIMA"])
+          try:
+              metrics = ET.parse("build/logs/clover.xml").getroot().find("project/metrics")
+          except Exception as e:
+              print(f"ERRO: nao consegui ler build/logs/clover.xml ({e})")
+              sys.exit(1)
+
+          if metrics is None:
+              print("ERRO: clover.xml sem bloco de metricas.")
+              sys.exit(1)
+
+          total = int(metrics.get("statements", 0))
+          cobertos = int(metrics.get("coveredstatements", 0))
+
+          if total == 0:
+              print("ERRO: nenhuma instrucao medida. A suite rodou de verdade?")
+              sys.exit(1)
+
+          pct = 100.0 * cobertos / total
+          print(f"cobertura: {pct:.2f}%  ({cobertos}/{total} instrucoes)  |  minimo: {minima:.0f}%")
+
+          if pct + 1e-9 < minima:
+              print(f"REPROVADO: {pct:.2f}% esta abaixo do minimo de {minima:.0f}%.")
+              sys.exit(1)
+
+          print("aprovado")
+          PY
+
+      - name: Guardar os relatórios
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobertura-${{ inputs.servico }}
+          path: build/logs/
+          retention-days: 7
+
+  # ------------------------------------------------------------------- sonar
+  sonar:
+    name: SonarQube e quality gate
+    needs: testes
+    if: inputs.sonar-project-key != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Recuperar a cobertura
+        uses: actions/download-artifact@v4
+        with:
+          name: cobertura-${{ inputs.servico }}
+          path: build/logs
+
+      # A configuração do scanner vive no sonar-project.properties de cada serviço:
+      # chave do projeto, organização, sources, tests e os caminhos dos relatórios.
+      # Nada disso é segredo, e versionado dá para conferir num diff. Aqui não se
+      # repete nenhum deles — o que muda por serviço mora no serviço.
+      - name: Analisar
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+
+      # Das três métricas da Aula 4, duas são condição direta do quality gate:
+      # cobertura e débito técnico (Maintainability Rating). A complexidade
+      # ciclomática NÃO é — no Sonar ela é medida, não rating, e o gate só aceita
+      # rating e percentual. Quem a enforça é a regra php:S1541 (max = 10) no
+      # quality profile: função acima do limite vira issue, issue derruba o
+      # Maintainability Rating, e aí o gate reprova. Detalhes no
+      # docs/sonar-quality-gate.md do oficina-infra-fase4.
+      #
+      # Aqui a gente só espera o veredito e falha se ele reprovar.
+      - name: Esperar o quality gate
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
+
+  # ------------------------------------------------------------------ imagem
+  imagem:
+    name: Build e push da imagem
+    needs: testes
+    if: github.ref == 'refs/heads/main' && inputs.imagem != ''
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.valor }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Definir a tag
+        id: tag
+        run: echo "valor=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Entrar no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # A tag do commit é o que o deploy aplica. latest existe só para
+          # o manifesto ser aplicável à mão.
+          tags: |
+            ${{ inputs.imagem }}:${{ steps.tag.outputs.valor }}
+            ${{ inputs.imagem }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ------------------------------------------------------------------ deploy
+  deploy:
+    name: Deploy no EKS
+    needs: imagem
+    if: github.ref == 'refs/heads/main' && inputs.deploy && inputs.manifestos != ''
+    runs-on: ubuntu-latest
+    steps:
+      # Sem ramo silencioso. Se faltar credencial, para aqui, em vermelho.
+      - name: Conferir os segredos antes de qualquer coisa
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+        run: |
+          faltando=""
+          [ -n "$AWS_ACCESS_KEY_ID" ]     || faltando="$faltando AWS_ACCESS_KEY_ID"
+          [ -n "$AWS_SECRET_ACCESS_KEY" ] || faltando="$faltando AWS_SECRET_ACCESS_KEY"
+          [ -n "$KUBECONFIG_B64" ]        || faltando="$faltando KUBECONFIG"
+
+          if [ -n "$faltando" ]; then
+            echo "::error::Faltam os secrets:$faltando"
+            echo ""
+            echo "As credenciais do AWS Academy expiram em horas. Rode o"
+            echo "atualiza-secrets-fase4.sh do oficina-infra-fase4 DENTRO da janela"
+            echo "do lab e dispare este workflow de novo."
+            echo ""
+            echo "Este job falha de proposito em vez de pular em silencio: na Fase 3"
+            echo "ele passou a fase inteira 'passando' sem nunca aplicar nada."
+            exit 1
+          fi
+          echo "credenciais presentes"
+
+      - name: Configurar a AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ inputs.regiao-aws }}
+
+      - name: Montar o kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "$KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          echo "KUBECONFIG=$HOME/.kube/config" >> "$GITHUB_ENV"
+
+      - name: Provar que o cluster responde
+        run: |
+          kubectl get nodes
+          kubectl get namespace oficina || kubectl create namespace oficina
+
+      # Os manifestos vivem no repositório de infra, não no do serviço.
+      - name: Buscar os manifestos
+        uses: actions/checkout@v4
+        with:
+          repository: Ralima0711/oficina-infra-fase4
+          ref: main
+          path: infra
+
+      - name: Aplicar
+        run: |
+          kubectl apply -f "infra/${{ inputs.manifestos }}/"
+
+      - name: Apontar para a imagem deste commit
+        env:
+          TAG: ${{ needs.imagem.outputs.tag }}
+        run: |
+          # Troca a imagem em todo Deployment do serviço: API e workers.
+          for d in $(kubectl -n oficina get deploy \
+                      -l "app.kubernetes.io/name=${{ inputs.servico }}" \
+                      -o name); do
+            conteiner=$(kubectl -n oficina get "$d" -o jsonpath='{.spec.template.spec.containers[0].name}')
+            kubectl -n oficina set image "$d" \
+              "${conteiner}=${{ inputs.imagem }}:${TAG}"
+          done
+
+      - name: Esperar o rollout
+        run: |
+          for d in $(kubectl -n oficina get deploy \
+                      -l "app.kubernetes.io/name=${{ inputs.servico }}" \
+                      -o name); do
+            kubectl -n oficina rollout status "$d" --timeout=5m
+          done
+
+      - name: Mostrar o que ficou de pé
+        run: |
+          kubectl -n oficina get deploy,pod,hpa \
+            -l "app.kubernetes.io/part-of=oficina-fase4"
