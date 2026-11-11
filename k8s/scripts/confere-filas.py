@@ -23,9 +23,15 @@ K8S = AQUI.parent
 # ter check nenhum.
 SEM_REFERENCIA_DE_PROPOSITO = {
     "billing.aguardando-aprovacao":
-        "sala de espera do ADR-0010: a mensagem fica parada ate o TTL de 7 dias "
-        "vencer e o dead-letter manda para billing.aprovacao-expirada. "
-        "Consumidor nela quebraria o timeout.",
+        "sala de espera do ADR-0010: a mensagem ficaria parada ate o TTL de 7 "
+        "dias vencer. Consumidor nela quebraria o timeout. ATENCAO: hoje NADA "
+        "publica nesta fila — nem binding, nem codigo nos dois servicos. O "
+        "mecanismo esta inerte.",
+    "billing.aprovacao-expirada":
+        "destino do dead-letter da sala de espera. Sem consumidor, e por isso "
+        "a expiracao nao chega no orquestrador: os.saga.eventos esta ligada ao "
+        "oficina.eventos, e o dead-letter vai para o oficina.espera. Falta o "
+        "binding, e falta alguem publicar na sala de espera.",
     "os.saga.eventos":
         "o nome e constante no ConsumirEventosSaga do OS Service, nao vem de "
         "env. Declarar a chave no ConfigMap daria a impressao de que mudar o "

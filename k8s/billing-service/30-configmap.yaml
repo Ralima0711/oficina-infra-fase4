@@ -24,5 +24,18 @@ data:
   FILA_COBRAR_PAGAMENTO: "billing.cobrar-pagamento"
   FILA_ANULAR_ORCAMENTO: "billing.anular-orcamento"
   FILA_ESTORNAR_PAGAMENTO: "billing.estornar-pagamento"
-  FILA_APROVACAO_EXPIRADA: "billing.aprovacao-expirada"
-  ORCAMENTO_VALIDADE_DIAS: "7"
+
+  # FILA_APROVACAO_EXPIRADA e ORCAMENTO_VALIDADE_DIAS SAIRAM em 12/11.
+  #
+  # Nenhuma das duas aparece em config/ nem em app/ do billing. O ConsumirFila
+  # conhece quatro filas — gerar, cobrar, anular e estornar — e
+  # billing.aprovacao-expirada nao e uma delas: quem reage a expiracao e o
+  # orquestrador, pelo evento aprovacao.expirada em os.saga.eventos.
+  #
+  # E os 7 dias nao se configuram aqui. Eles sao o x-message-ttl de
+  # billing.aguardando-aprovacao no rabbitmq/definitions.json (604800000 ms),
+  # porque quem conta o tempo e o broker, nao a aplicacao (ADR-0010). Uma chave
+  # de ConfigMap com "7" dava a impressao de que mudar esse numero mudava o
+  # prazo — e nao mudava nada.
+  #
+  # Achadas pelo confere-env.py na primeira execucao dele.
