@@ -7,9 +7,10 @@
 # aberta para reconfigurar o gateway de fora; em DB-less ele nem precisa existir
 # para operar.
 #
-# As rotas do Billing e da Execucao saem do routes/api.php de cada um, lidas em
-# 02/11. As do OS Service estao marcadas A CONFIRMAR: o servico ainda nao existe,
-# e o bloco esta escrito para nao precisar ser inventado depois — so conferido.
+# As rotas de todos os servicos saem do routes/api.php de cada um. As do Billing
+# e da Execucao foram lidas em 02/11; as do OS Service ficaram marcadas
+# A CONFIRMAR porque o servico nao tinha API nenhuma. Em 12/11 a API foi escrita
+# e o bloco abaixo foi conferido contra ela.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -32,18 +33,34 @@ data:
         connect_timeout: 5000
         read_timeout: 60000
         routes:
-          # A CONFIRMAR quando o OS Service existir: estes sao os prefixos que a
-          # API da Fase 3 usava. Se mudarem no recorte, mudam aqui.
+          # Conferido em 12/11 contra o routes/api.php do OS Service. Cobre as
+          # tres rotas que existem:
+          #   POST /api/ordens-servico
+          #   POST /api/ordens-servico/{id}/diagnostico
+          #   GET  /api/ordens-servico/{id}
           - name: os-ordens-servico
             paths: ["/api/ordens-servico"]
             strip_path: false
-          - name: os-clientes
-            paths: ["/api/clientes"]
-            strip_path: false
-          - name: os-veiculos
-            paths: ["/api/veiculos"]
-            strip_path: false
 
+          # /api/clientes e /api/veiculos SAIRAM. Estavam aqui porque a API da
+          # Fase 3 os tinha, e ficaram marcados A CONFIRMAR desde 02/11.
+          #
+          # O OS Service nao implementa nem um nem outro, e nao e descuido: os
+          # dominios Cliente e Veiculo existem no repositorio (8 arquivos, com
+          # Cpf, Cnpj, Placa e DocumentoFiscal) e nao sao referenciados por NADA
+          # fora de si mesmos — zero controllers, zero repositorios, zero rotas,
+          # zero testes, 0% de cobertura. E scaffolding da decomposicao que
+          # ficou para tras.
+          #
+          # Rota de gateway apontando para endpoint inexistente e pior que rota
+          # ausente: o Kong encaminha e o cliente leva um 404 do servico, como se
+          # o recurso existisse e estivesse vazio. Cliente e veiculo sao da API
+          # da Fase 3; este servico so guarda os ids.
+
+          # NAO IMPLEMENTADA no OS Service ate 12/11. A rota esta mantida
+          # porque a decisao e do grupo, mas hoje ela encaminha para um endpoint
+          # que nao existe e devolve 404.
+          #
           # Rotas do cliente final, autenticadas pelo token RS256 que a Lambda
           # emite (ADR-0004 e ADR-0005 da Fase 3). O guard da aplicacao continua
           # valendo: o Kong barra token invalido antes de chegar no servico, e a

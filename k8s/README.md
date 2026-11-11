@@ -280,7 +280,7 @@ default em silêncio.
 
 | Falta | Observação |
 |---|---|
-| **Rotas do OS Service no Kong** | Os três prefixos do bloco `os-service` em `base/20-kong.yaml` estão marcados **A CONFIRMAR**: vieram da API da Fase 3 e o serviço novo ainda não existe. Quando existir, é conferir, não inventar. |
+| **Área do cliente no Kong** | `/api/public/ordens-servico`, com JWT RS256 (ADR-0004/0005 da Fase 3), continua declarada e **não implementada** no OS Service. Os prefixos de `ordens-servico` foram conferidos em 12/11; `clientes` e `veiculos` saíram. |
 | **Migrations na subida** | Os bancos relacionais sobem vazios. A Execução já resolveu os índices do Mongo com `initContainer`; falta a mesma decisão para as migrations do Postgres do OS e do Billing. |
 
 ---
@@ -292,10 +292,29 @@ versionada. Rota não se cria pelo Admin API — mesma regra das filas do Rabbit
 
 | Prefixo | Vai para | Origem |
 |---|---|---|
-| `/api/ordens-servico`, `/api/clientes`, `/api/veiculos` | OS Service | **a confirmar** |
-| `/api/public/ordens-servico` | OS Service, com **JWT RS256** | **a confirmar** |
+| `/api/ordens-servico` | OS Service | `routes/api.php` ✓ 12/11 |
+| `/api/public/ordens-servico` | OS Service, com **JWT RS256** | **não implementada** |
 | `/api/orcamentos`, `/api/pagamentos` | Billing | `routes/api.php` |
 | `/api/execucao` | Execução | `routes/api.php` |
+
+`/api/ordens-servico` saiu do *a confirmar* em 12/11, quando a API do OS Service
+foi escrita. Ela cobre as três rotas que existem: `POST` para abrir a OS,
+`POST /{id}/diagnostico` para fechar o diagnóstico e iniciar a saga, e
+`GET /{id}` para acompanhar.
+
+**`/api/clientes` e `/api/veiculos` foram removidos.** Estavam ali porque a API
+da Fase 3 os tinha. O OS Service não implementa nenhum dos dois, e não é
+descuido: os domínios `Cliente` e `Veiculo` existem no repositório — 8 arquivos,
+com `Cpf`, `Cnpj`, `Placa` e `DocumentoFiscal` — e não são referenciados por
+**nada** fora de si mesmos. Zero controllers, zero repositórios, zero rotas,
+zero testes, 0% de cobertura. É scaffolding da decomposição que ficou para trás.
+
+Rota de gateway apontando para endpoint inexistente é pior que rota ausente: o
+Kong encaminha e o cliente leva um 404 do serviço, como se o recurso existisse e
+estivesse vazio.
+
+`/api/public/ordens-servico` continua declarada porque a decisão é do grupo, mas
+hoje ela encaminha para um endpoint que não existe.
 
 O token do cliente é o mesmo RS256 da Fase 3 (ADR-0004/0005): a Lambda assina com
 a privada, o Kong valida com a pública. A chave pública entra por variável de
