@@ -50,16 +50,14 @@ spec:
                 secretKeyRef:
                   name: execucao-app-key
                   key: app-key
-            - name: MONGO_USERNAME
+            # A URI inteira, com usuario e senha: config/mongodb.php le
+            # MONGO_URI e nada mais. MONGO_USERNAME e MONGO_PASSWORD estavam
+            # aqui e nao chegavam na conexao.
+            - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: execucao-mongo-credentials
-                  key: username
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: execucao-mongo-credentials
-                  key: password
+                  key: uri
           resources:
             requests:
               cpu: 50m
@@ -106,16 +104,14 @@ spec:
                 secretKeyRef:
                   name: execucao-redis-credentials
                   key: password
-            - name: MONGO_USERNAME
+            # A URI inteira, com usuario e senha: config/mongodb.php le
+            # MONGO_URI e nada mais. MONGO_USERNAME e MONGO_PASSWORD estavam
+            # aqui e nao chegavam na conexao.
+            - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: execucao-mongo-credentials
-                  key: username
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: execucao-mongo-credentials
-                  key: password
+                  key: uri
           readinessProbe:
             httpGet:
               path: /health

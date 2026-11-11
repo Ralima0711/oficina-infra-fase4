@@ -60,7 +60,7 @@ tudo isso se perde junto com o cluster e precisa ser recriado.
 | `billing-mercadopago` | `access-token` | Billing (sandbox) |
 | `execucao-app-key` | `app-key` | Execução (API e worker) |
 | `execucao-redis-credentials` | `password` | Execução |
-| `execucao-mongo-credentials` | `username`, `password` | Execução |
+| `execucao-mongo-credentials` | `username`, `password`, **`uri`** | Execução e o StatefulSet do Mongo |
 | `observabilidade` | `new-relic-license-key` | todos os serviços |
 
 O formato do comando, para quem for criar:
@@ -76,6 +76,22 @@ A chave pública do JWT vem de arquivo, não de literal:
 ```bash
 kubectl -n oficina create secret generic os-jwt --from-file=public-key=jwt-public.pem
 ```
+
+A `uri` do Mongo da Execução é a URI **inteira**, com usuário e senha dentro —
+não é o host. O `config/mongodb.php` lê `MONGO_URI` e só ela; `MONGO_USERNAME` e
+`MONGO_PASSWORD` não entram na conexão. Como o StatefulSet sobe o Mongo com
+`MONGO_INITDB_ROOT_USERNAME`/`PASSWORD`, URI sem credencial falha na primeira
+escrita — no compose passa porque lá o Mongo sobe sem autenticação.
+
+```bash
+kubectl -n oficina create secret generic execucao-mongo-credentials \
+  --from-literal=username='...' \
+  --from-literal=password='...' \
+  --from-literal=uri='mongodb://<usuario>:<senha>@execucao-mongo:27017/oficina_execucao?authSource=admin'
+```
+
+> Senha com `@`, `:` ou `/` precisa de *percent-encoding* na URI, senão o
+> driver lê o endereço errado.
 
 As três `app-key` se geram com o próprio artisan, uma por serviço — não se
 reaproveita a mesma chave em dois serviços, pelo mesmo motivo de não se
@@ -205,6 +221,12 @@ E os nomes de fila dos ConfigMaps se conferem contra ela:
 ```bash
 python3 scripts/confere-filas.py
 ```
+
+> **Quem já tem volume do RabbitMQ com `os.readmodel.eventos` criada precisa
+> apagar essa fila antes de subir de novo.** Argumento de fila não muda em fila
+> que já existe: o broker recusa a definição nova e mantém a antiga, sem o
+> `x-max-length`. No compose, `docker compose down -v` resolve; no cluster,
+> `rabbitmqctl delete_queue os.readmodel.eventos` antes do rollout.
 
 Esse segundo script pega o erro mais silencioso que esta arquitetura permite: fila
 com nome digitado errado. O serviço sobe, conecta, declara a fila errada e fica

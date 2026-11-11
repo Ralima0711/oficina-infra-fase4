@@ -14,7 +14,17 @@
 # que nao tem nada a ver com ela. Em producao e capacidade; na demo parece
 # travamento.
 #
-# Dois Deployments resolvem: cada um roda `fila:consumir --fila=<a sua>`.
+# Dois Deployments resolvem: cada um roda `fila:consumir` com as SUAS filas.
+#
+# Cada worker leva a fila de ida E a de compensacao do mesmo assunto:
+# gerar+anular orcamento num, cobrar+estornar pagamento no outro. Ate 12/11 os
+# manifestos tinham so gerar e cobrar — anular-orcamento e estornar-pagamento
+# ficavam SEM CONSUMIDOR no cluster, e a compensacao, que e o que a fase cobra,
+# simplesmente nao rodava no EKS. No compose rodava, e o comentario de la dizia
+# que espelhava estes Deployments.
+#
+# Compensacao junto com a ida, e nao num terceiro worker, porque as duas tocam
+# o mesmo agregado: orcamento num processo, pagamento no outro.
 #
 # Deployment separado da API tambem e de proposito: quem consome fila nao atende
 # HTTP. No mesmo pod, o HPA escalaria consumidor por CPU de requisicao web e o
@@ -56,7 +66,7 @@ spec:
         - name: worker
           image: ralima0711/oficina-billing-service:latest
           imagePullPolicy: IfNotPresent
-          command: ["php", "artisan", "fila:consumir", "--fila=billing.gerar-orcamento"]
+          command: ["php", "artisan", "fila:consumir", "--fila=billing.gerar-orcamento", "--fila=billing.anular-orcamento"]
           envFrom:
             - configMapRef:
                 name: billing-service-config
@@ -142,7 +152,7 @@ spec:
         - name: worker
           image: ralima0711/oficina-billing-service:latest
           imagePullPolicy: IfNotPresent
-          command: ["php", "artisan", "fila:consumir", "--fila=billing.cobrar-pagamento"]
+          command: ["php", "artisan", "fila:consumir", "--fila=billing.cobrar-pagamento", "--fila=billing.estornar-pagamento"]
           envFrom:
             - configMapRef:
                 name: billing-service-config

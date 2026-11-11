@@ -15,8 +15,16 @@ data:
   REDIS_CLIENT: "predis"
   REDIS_HOST: "execucao-redis"
   REDIS_PORT: "6379"
-  # config/mongodb.php le MONGO_URI, nao MONGO_HOST/MONGO_PORT.
-  MONGO_URI: "mongodb://execucao-mongo:27017"
+  # MONGO_URI NAO fica aqui.
+  #
+  # config/mongodb.php le MONGO_URI e so ela — MONGO_USERNAME e MONGO_PASSWORD
+  # nao entram na conexao. Como o StatefulSet cria o Mongo com
+  # MONGO_INITDB_ROOT_USERNAME/PASSWORD, a URI precisa levar usuario e senha
+  # dentro dela, e isso e segredo: vai no Secret execucao-mongo-credentials,
+  # chave `uri`, injetada no Deployment e no worker.
+  #
+  # No compose funciona sem credencial porque aquele Mongo sobe sem
+  # autenticacao. No cluster, URI sem credencial falha na primeira escrita.
   MONGO_DATABASE: "oficina_execucao"
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
