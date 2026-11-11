@@ -42,20 +42,18 @@ data:
             paths: ["/api/ordens-servico"]
             strip_path: false
 
-          # /api/clientes e /api/veiculos SAIRAM. Estavam aqui porque a API da
-          # Fase 3 os tinha, e ficaram marcados A CONFIRMAR desde 02/11.
-          #
-          # O OS Service nao implementa nem um nem outro, e nao e descuido: os
-          # dominios Cliente e Veiculo existem no repositorio (8 arquivos, com
-          # Cpf, Cnpj, Placa e DocumentoFiscal) e nao sao referenciados por NADA
-          # fora de si mesmos — zero controllers, zero repositorios, zero rotas,
-          # zero testes, 0% de cobertura. E scaffolding da decomposicao que
-          # ficou para tras.
-          #
-          # Rota de gateway apontando para endpoint inexistente e pior que rota
-          # ausente: o Kong encaminha e o cliente leva um 404 do servico, como se
-          # o recurso existisse e estivesse vazio. Cliente e veiculo sao da API
-          # da Fase 3; este servico so guarda os ids.
+          # /api/clientes e /api/veiculos tambem sao deste servico, e nao da
+          # API da Fase 3: o ADR-0007 decidiu em 20/10 que "cliente e veiculo
+          # ficam no OS Service, nao em um quarto servico". Ficaram marcados
+          # A CONFIRMAR desde 02/11 porque a decisao estava registrada e o
+          # recorte tinha parado no scaffolding — entidades e value objects, sem
+          # tabela, sem repositorio, sem rota. Implementados em 12/11.
+          - name: os-clientes
+            paths: ["/api/clientes"]
+            strip_path: false
+          - name: os-veiculos
+            paths: ["/api/veiculos"]
+            strip_path: false
 
           # NAO IMPLEMENTADA no OS Service ate 12/11. A rota esta mantida
           # porque a decisao e do grupo, mas hoje ela encaminha para um endpoint
