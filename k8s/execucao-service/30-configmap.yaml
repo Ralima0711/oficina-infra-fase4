@@ -9,6 +9,9 @@ metadata:
     app.kubernetes.io/component: api
     app.kubernetes.io/part-of: oficina-fase4
 data:
+  # stdout em JSON. Sem isto o Laravel escreve em storage/logs dentro do
+  # pod: `kubectl logs` vem vazio e o New Relic nao coleta nada.
+  LOG_CHANNEL: "stdout_json"
   REDIS_CLIENT: "predis"
   REDIS_HOST: "execucao-redis"
   REDIS_PORT: "6379"

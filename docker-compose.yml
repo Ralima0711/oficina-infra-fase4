@@ -161,6 +161,9 @@ services:
     environment: &os-env
       APP_ENV: local
       APP_DEBUG: "true"
+      # stdout em JSON: o default do Laravel escreve em arquivo dentro do
+      # container, e ai `docker compose logs` e `kubectl logs` nao mostram nada.
+      LOG_CHANNEL: stdout_json
       APP_KEY: base64:Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=
       DB_CONNECTION: pgsql
       DB_HOST: os-postgres
@@ -217,6 +220,9 @@ services:
     environment: &billing-env
       APP_ENV: local
       APP_DEBUG: "true"
+      # stdout em JSON: o default do Laravel escreve em arquivo dentro do
+      # container, e ai `docker compose logs` e `kubectl logs` nao mostram nada.
+      LOG_CHANNEL: stdout_json
       APP_KEY: base64:Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=
       DB_CONNECTION: pgsql
       DB_HOST: billing-postgres
@@ -274,6 +280,9 @@ services:
     environment: &execucao-env
       APP_ENV: local
       APP_DEBUG: "true"
+      # stdout em JSON: o default do Laravel escreve em arquivo dentro do
+      # container, e ai `docker compose logs` e `kubectl logs` nao mostram nada.
+      LOG_CHANNEL: stdout_json
       APP_KEY: base64:Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=
       REDIS_CLIENT: predis
       REDIS_HOST: execucao-redis
