@@ -177,9 +177,18 @@ services:
       RABBITMQ_PASSWORD: guest
       RABBITMQ_VHOST: "/"
       RABBITMQ_EXCHANGE: oficina.eventos
+      # Read model de status e historico (ADR-0009). O os-mongo ja existia
+      # neste arquivo desde que o ADR foi escrito, mas nenhum processo do OS
+      # Service apontava para ele: o default do config/database.php e
+      # mongodb://127.0.0.1:27017, que dentro do container e o proprio
+      # container. Banco declarado e nunca conectado.
+      MONGO_DSN: mongodb://os-mongo:27017
+      MONGO_DATABASE: os_read_model
     depends_on:
       os-postgres:
         condition: service_healthy
+      os-mongo:
+        condition: service_started
       rabbitmq:
         condition: service_healthy
 
@@ -205,6 +214,21 @@ services:
     environment: *os-env
     depends_on:
       os-service:
+        condition: service_started
+
+  # Projetor do read model. Terceiro processo do OS Service, e separado dos
+  # outros dois de proposito: projecao atrasada nao pode travar a escrita, e
+  # Mongo fora do ar nao pode derrubar a saga.
+  os-readmodel:
+    <<: *app-comum
+    image: oficina-os-service:dev
+    container_name: oficina-os-readmodel
+    command: ["php", "artisan", "readmodel:projetar"]
+    environment: *os-env
+    depends_on:
+      os-service:
+        condition: service_started
+      os-mongo:
         condition: service_started
 
   # ------------------------------------------------------- Billing Service

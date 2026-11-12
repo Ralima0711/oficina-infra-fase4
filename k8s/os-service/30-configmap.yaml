@@ -18,6 +18,10 @@ data:
   DB_HOST: "os-postgres"
   DB_PORT: "5432"
   DB_DATABASE: "oficina_os"
+  # Read model (ADR-0009). So o nome do banco fica aqui: a MONGO_DSN leva
+  # usuario e senha dentro e vem do Secret os-mongo-credentials, porque
+  # config/database.php le MONGO_DSN e so ela.
+  MONGO_DATABASE: "os_read_model"
   # config/messaging.php le RABBITMQ_EXCHANGE, nao EXCHANGE_EVENTOS.
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
