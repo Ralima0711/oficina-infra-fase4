@@ -55,6 +55,7 @@ tudo isso se perde junto com o cluster e precisa ser recriado.
 | `os-postgres-credentials` | `username`, `password` | OS Service |
 | `os-app-key` | `app-key` | OS Service (API e os dois workers) |
 | `os-jwt` | `public-key` | **Kong**, para validar o RS256 (ADR-0004/0005 da Fase 3) |
+| `os-mongo-credentials` | `username`, `password`, **`dsn`** | OS Service (API e worker do read model) e o StatefulSet do Mongo |
 | `billing-app-key` | `app-key` | Billing (API e os dois workers) |
 | `billing-postgres-credentials` | `username`, `password` | Billing |
 | `billing-mercadopago` | `access-token` | Billing (sandbox) |
@@ -92,6 +93,16 @@ kubectl -n oficina create secret generic execucao-mongo-credentials \
 
 > Senha com `@`, `:` ou `/` precisa de *percent-encoding* na URI, senão o
 > driver lê o endereço errado.
+
+O Mongo do OS Service — o read model de status e histórico do ADR-0009 — segue a
+mesma regra, e pela mesma razão: `config/database.php` lê `MONGO_DSN` e só ela.
+
+```bash
+kubectl -n oficina create secret generic os-mongo-credentials \
+  --from-literal=username='...' \
+  --from-literal=password='...' \
+  --from-literal=dsn='mongodb://<usuario>:<senha>@os-mongo:27017/os_read_model?authSource=admin'
+```
 
 As três `app-key` se geram com o próprio artisan, uma por serviço — não se
 reaproveita a mesma chave em dois serviços, pelo mesmo motivo de não se

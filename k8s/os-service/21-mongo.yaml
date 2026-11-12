@@ -1,0 +1,96 @@
+# MongoDB do OS Service — read model de status e historico (CQRS, ADR-0009).
+#
+# O ADR-0009 decidiu em 20/10 que o OS Service tem dois bancos: Postgres para
+# escrita e Mongo para o lado de leitura. O Postgres estava aqui desde o
+# primeiro dia; o Mongo nunca existiu nos manifestos. A decisao estava
+# registrada e o cluster nao a cumpria.
+#
+# Credencial pelo mesmo caminho do Mongo da Execucao, e pelo mesmo motivo: o
+# StatefulSet sobe com MONGO_INITDB_ROOT_USERNAME/PASSWORD, entao conexao sem
+# credencial falha na primeira escrita. No compose passa porque la o Mongo sobe
+# sem autenticacao — foi assim que a Execucao chegou a 12/11 com esse buraco.
+apiVersion: v1
+kind: Service
+metadata:
+  name: os-mongo
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: os-mongo
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: os-mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: os-mongo
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: os-mongo
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  serviceName: os-mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: os-mongo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: os-mongo
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: oficina-fase4
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          ports:
+            - name: mongo
+              containerPort: 27017
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: username
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: password
+          volumeMounts:
+            - name: dados
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 40
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 768Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: dados
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi

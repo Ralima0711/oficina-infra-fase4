@@ -1,0 +1,88 @@
+# Projetor do read model: le os eventos da saga e escreve status e historico
+# no Mongo (CQRS, ADR-0009).
+#
+# Terceiro processo do OS Service, e separado dos outros dois pelo mesmo
+# criterio: tres responsabilidades, tres modos de falha. A API nem le nem
+# escreve no broker, o os-service-saga consome e decide, o os-service-outbox
+# publica, e este so projeta. Mongo fora do ar atrasa a consulta de historico;
+# nao pode derrubar a saga.
+#
+# Replica unica, de proposito. A idempotencia do projetor e por messageId, com
+# leitura seguida de escrita — duas replicas podem passar as duas pela
+# verificacao e duplicar a entrada no historico. Enquanto a escrita nao for uma
+# unica operacao condicional, uma replica e o que esta correto.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: os-service-readmodel
+  namespace: oficina
+  labels:
+    app.kubernetes.io/name: os-service
+    app.kubernetes.io/component: readmodel
+    app.kubernetes.io/part-of: oficina-fase4
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: os-service
+      app.kubernetes.io/component: readmodel
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: os-service
+        app.kubernetes.io/component: readmodel
+        app.kubernetes.io/part-of: oficina-fase4
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: readmodel
+          image: ralima0711/oficina-os-service:latest
+          imagePullPolicy: IfNotPresent
+          command: ["php", "artisan", "readmodel:projetar"]
+          envFrom:
+            - configMapRef:
+                name: os-service-config
+          env:
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: os-app-key
+                  key: app-key
+            - name: APP_ENV
+              value: production
+            - name: RABBITMQ_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: username
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq-credentials
+                  key: password
+            # A DSN inteira, com usuario e senha dentro: o config/database.php
+            # le MONGO_DSN e so ela. Host sem credencial falha na escrita.
+            - name: MONGO_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: dsn
+            - name: NEW_RELIC_LICENSE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: observabilidade
+                  key: new-relic-license-key
+            # O projetor nao toca no Postgres: ele le evento e escreve no
+            # Mongo. DB_USERNAME e DB_PASSWORD ficam de fora de proposito —
+            # credencial entregue a quem nao usa e a mesma classe de erro que o
+            # JWT_PUBLIC_KEY nos workers, que derrubava o pod por uma variavel
+            # que ninguem lia.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

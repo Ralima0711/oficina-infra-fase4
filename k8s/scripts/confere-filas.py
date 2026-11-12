@@ -39,11 +39,13 @@ SEM_REFERENCIA_DE_PROPOSITO = {
         "env. Declarar a chave no ConfigMap daria a impressao de que mudar o "
         "valor ali muda a fila consumida, e nao muda.",
     "os.readmodel.eventos":
-        "sem consumidor nesta fase: o projetor do read model nao existe ainda "
-        "(ADR-0009). Por isso ela e limitada em x-max-length 10000 com "
-        "drop-head e TTL de 24h — fila ligada ao exchange sem ninguem drenando "
-        "cresce para sempre e, no limite de memoria, o RabbitMQ BLOQUEIA os "
-        "publicadores e para a saga dos tres servicos.",
+        "o nome e constante no ProjetarReadModel do OS Service, nao vem de env "
+        "— mesmo caso da os.saga.eventos. Ate 12/11 o motivo aqui era outro: "
+        "nao havia projetor nenhum, e a fila existia ligada ao exchange sem "
+        "consumidor. O x-max-length 10000 com drop-head e o TTL de 24h vieram "
+        "dai e ficam: fila sem quem drene cresce para sempre e, no teto de "
+        "memoria, o RabbitMQ BLOQUEIA os publicadores e para a saga dos tres "
+        "servicos. O limite agora e rede de seguranca, nao muleta.",
 }
 
 

@@ -64,6 +64,13 @@ spec:
                 secretKeyRef:
                   name: rabbitmq-credentials
                   key: password
+            # GET /api/ordens-servico/{id}/historico le o read model, entao a
+            # API tambem precisa da DSN — nao so o worker que projeta.
+            - name: MONGO_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: os-mongo-credentials
+                  key: dsn
             - name: NEW_RELIC_LICENSE_KEY
               valueFrom:
                 secretKeyRef:
