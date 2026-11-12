@@ -1,0 +1,25 @@
+{
+  "descricao": "Condições NRQL do alerta de falha no processamento de OS na saga. Cada uma abre incidente se count(*) passar de 0 numa janela de 5 min.",
+  "aplicacao": "Definição versionada, ainda não aplicada: pode virar newrelic_nrql_alert_condition no Terraform do oficina-infra-k8s (que já tem a policy, o canal de e-mail e o workflow) ou ser criada por NerdGraph.",
+  "condicoes": [
+    {
+      "nome": "Execução falhou (execucao.falhou publicado)",
+      "nrql": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'evento_publicado' AND evento = 'execucao.falhou'"
+    },
+    {
+      "nome": "Falha ao processar mensagem da saga",
+      "nrql": "SELECT count(*) FROM Log WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND message = 'falha_ao_processar_mensagem'"
+    },
+    {
+      "nome": "Mensagem enviada para a DLQ",
+      "nrql": "SELECT count(*) FROM Log WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND message LIKE '%enviad%para_dlq'"
+    },
+    {
+      "nome": "Span com erro em qualquer serviço da saga",
+      "nrql": "SELECT count(*) FROM Span WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND otel.status_code = 'ERROR'"
+    }
+  ],
+  "janela_segundos": 300,
+  "limite": 0,
+  "operador": "above"
+}
