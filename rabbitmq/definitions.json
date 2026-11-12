@@ -158,8 +158,9 @@
       "durable": true,
       "auto_delete": false,
       "arguments": {
-        "x-dead-letter-exchange": "oficina.dlx",
-        "x-dead-letter-routing-key": "dlq.billing.aprovacao-expirada"
+        "x-max-length": 10000,
+        "x-overflow": "drop-head",
+        "x-message-ttl": 2592000000
       }
     },
     {
@@ -217,13 +218,6 @@
       "durable": true,
       "auto_delete": false,
       "arguments": {}
-    },
-    {
-      "name": "dlq.billing.aprovacao-expirada",
-      "vhost": "/",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {}
     }
   ],
   "bindings": [
@@ -271,6 +265,14 @@
       "source": "oficina.espera",
       "vhost": "/",
       "destination": "billing.aprovacao-expirada",
+      "destination_type": "queue",
+      "routing_key": "aprovacao.expirada",
+      "arguments": {}
+    },
+    {
+      "source": "oficina.espera",
+      "vhost": "/",
+      "destination": "os.saga.eventos",
       "destination_type": "queue",
       "routing_key": "aprovacao.expirada",
       "arguments": {}
@@ -337,14 +339,6 @@
       "destination": "dlq.billing.aguardando-aprovacao",
       "destination_type": "queue",
       "routing_key": "dlq.billing.aguardando-aprovacao",
-      "arguments": {}
-    },
-    {
-      "source": "oficina.dlx",
-      "vhost": "/",
-      "destination": "dlq.billing.aprovacao-expirada",
-      "destination_type": "queue",
-      "routing_key": "dlq.billing.aprovacao-expirada",
       "arguments": {}
     }
   ]

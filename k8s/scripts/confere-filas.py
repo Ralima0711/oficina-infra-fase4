@@ -23,15 +23,17 @@ K8S = AQUI.parent
 # ter check nenhum.
 SEM_REFERENCIA_DE_PROPOSITO = {
     "billing.aguardando-aprovacao":
-        "sala de espera do ADR-0010: a mensagem ficaria parada ate o TTL de 7 "
-        "dias vencer. Consumidor nela quebraria o timeout. ATENCAO: hoje NADA "
-        "publica nesta fila — nem binding, nem codigo nos dois servicos. O "
-        "mecanismo esta inerte.",
+        "sala de espera do ADR-0010. Consumidor nela quebraria o timeout: a "
+        "mensagem PRECISA ficar parada ate o x-message-ttl de 7 dias vencer. "
+        "Quem publica e o orquestrador, no onOrcamentoGerado, pelo outbox. "
+        "Quem conta o tempo e o broker — nao ha job agendado.",
     "billing.aprovacao-expirada":
-        "destino do dead-letter da sala de espera. Sem consumidor, e por isso "
-        "a expiracao nao chega no orquestrador: os.saga.eventos esta ligada ao "
-        "oficina.eventos, e o dead-letter vai para o oficina.espera. Falta o "
-        "binding, e falta alguem publicar na sala de espera.",
+        "copia de auditoria da expiracao. Quem AGE sobre ela e o orquestrador, "
+        "por os.saga.eventos, que desde 12/11 tambem esta ligada ao "
+        "oficina.espera. Esta copia nao tem consumidor, entao e limitada "
+        "(x-max-length 10000, drop-head, TTL 30 dias): fila ligada a exchange "
+        "sem ninguem drenando cresce para sempre e, no teto de memoria, o "
+        "RabbitMQ bloqueia os publicadores.",
     "os.saga.eventos":
         "o nome e constante no ConsumirEventosSaga do OS Service, nao vem de "
         "env. Declarar a chave no ConfigMap daria a impressao de que mudar o "
