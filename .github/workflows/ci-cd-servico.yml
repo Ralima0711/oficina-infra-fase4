@@ -33,6 +33,15 @@ on:
         required: false
         type: string
         default: "mbstring, pdo_sqlite"
+      db-connection:
+        description: >
+          Conexao de banco da suite. O <env> do phpunit NAO sobrepoe variavel de
+          ambiente ja definida, entao e daqui que sai a decisao. O default
+          sqlite mantem o comportamento que os servicos ja tinham; quem tem
+          teste de integracao contra Postgres passa pgsql.
+        required: false
+        type: string
+        default: "sqlite"
       cobertura-minima:
         description: Percentual mínimo de cobertura. Abaixo disso o job falha.
         required: false
@@ -128,6 +137,7 @@ jobs:
           --health-interval 10s --health-timeout 5s --health-retries 10
 
     env:
+      DB_CONNECTION: ${{ inputs.db-connection }}
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_USERNAME: oficina

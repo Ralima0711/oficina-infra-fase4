@@ -41,6 +41,12 @@ spec:
             - configMapRef:
                 name: os-service-config
           env:
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: os-app-key
+                  key: app-key
             - name: APP_ENV
               value: production
             - name: RABBITMQ_USER
@@ -68,21 +74,6 @@ spec:
                 secretKeyRef:
                   name: os-postgres-credentials
                   key: password
-            - name: MONGO_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: os-mongo-credentials
-                  key: username
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: os-mongo-credentials
-                  key: password
-            - name: JWT_PUBLIC_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: os-jwt
-                  key: public-key
           resources:
             requests:
               cpu: 100m

@@ -44,16 +44,20 @@ spec:
             - configMapRef:
                 name: execucao-service-config
           env:
-            - name: MONGO_USERNAME
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-app-key
+                  key: app-key
+            # A URI inteira, com usuario e senha: config/mongodb.php le
+            # MONGO_URI e nada mais. MONGO_USERNAME e MONGO_PASSWORD estavam
+            # aqui e nao chegavam na conexao.
+            - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: execucao-mongo-credentials
-                  key: username
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: execucao-mongo-credentials
-                  key: password
+                  key: uri
           resources:
             requests:
               cpu: 50m
@@ -72,6 +76,12 @@ spec:
             - configMapRef:
                 name: execucao-service-config
           env:
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: execucao-app-key
+                  key: app-key
             - name: APP_ENV
               value: production
             - name: RABBITMQ_USER
@@ -94,16 +104,14 @@ spec:
                 secretKeyRef:
                   name: execucao-redis-credentials
                   key: password
-            - name: MONGO_USERNAME
+            # A URI inteira, com usuario e senha: config/mongodb.php le
+            # MONGO_URI e nada mais. MONGO_USERNAME e MONGO_PASSWORD estavam
+            # aqui e nao chegavam na conexao.
+            - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
                   name: execucao-mongo-credentials
-                  key: username
-            - name: MONGO_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: execucao-mongo-credentials
-                  key: password
+                  key: uri
           readinessProbe:
             httpGet:
               path: /health

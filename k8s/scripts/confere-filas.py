@@ -17,11 +17,34 @@ import sys
 AQUI = pathlib.Path(__file__).resolve().parent
 K8S = AQUI.parent
 
-# Fila declarada no broker que NAO tem consumidor por decisao de projeto.
-# billing.aguardando-aprovacao e a sala de espera: a mensagem fica parada ate o
-# TTL de 7 dias vencer e o dead-letter manda para billing.aprovacao-expirada.
-# Consumidor nela quebraria o timeout.
-SEM_CONSUMIDOR_DE_PROPOSITO = {"billing.aguardando-aprovacao"}
+# Fila que existe no broker e NAO aparece em ConfigMap nenhum, de proposito.
+# Cada uma precisa de um motivo escrito aqui: sem isso, a conferencia vira um
+# check vermelho cronico e todo mundo aprende a ignorar, que e pior do que nao
+# ter check nenhum.
+SEM_REFERENCIA_DE_PROPOSITO = {
+    "billing.aguardando-aprovacao":
+        "sala de espera do ADR-0010. Consumidor nela quebraria o timeout: a "
+        "mensagem PRECISA ficar parada ate o x-message-ttl de 7 dias vencer. "
+        "Quem publica e o orquestrador, no onOrcamentoGerado, pelo outbox. "
+        "Quem conta o tempo e o broker — nao ha job agendado.",
+    "billing.aprovacao-expirada":
+        "copia de auditoria da expiracao. Quem AGE sobre ela e o orquestrador, "
+        "por os.saga.eventos, que desde 12/11 tambem esta ligada ao "
+        "oficina.espera. Esta copia nao tem consumidor, entao e limitada "
+        "(x-max-length 10000, drop-head, TTL 30 dias): fila ligada a exchange "
+        "sem ninguem drenando cresce para sempre e, no teto de memoria, o "
+        "RabbitMQ bloqueia os publicadores.",
+    "os.saga.eventos":
+        "o nome e constante no ConsumirEventosSaga do OS Service, nao vem de "
+        "env. Declarar a chave no ConfigMap daria a impressao de que mudar o "
+        "valor ali muda a fila consumida, e nao muda.",
+    "os.readmodel.eventos":
+        "sem consumidor nesta fase: o projetor do read model nao existe ainda "
+        "(ADR-0009). Por isso ela e limitada em x-max-length 10000 com "
+        "drop-head e TTL de 24h — fila ligada ao exchange sem ninguem drenando "
+        "cresce para sempre e, no limite de memoria, o RabbitMQ BLOQUEIA os "
+        "publicadores e para a saga dos tres servicos.",
+}
 
 
 def acha_raiz_do_repo(inicio: pathlib.Path) -> pathlib.Path | None:
@@ -52,11 +75,15 @@ def main() -> int:
     refs_exchange: dict[str, str] = {}
     for arquivo in sorted(K8S.rglob("*-configmap.yaml")):
         for linha in arquivo.read_text(encoding="utf-8").splitlines():
-            m = re.match(r'\s+(FILA_\w+|EXCHANGE_\w+):\s*"(.+)"', linha)
+            # A chave nao precisa COMECAR com FILA_/EXCHANGE_: a execucao usa
+            # RABBITMQ_FILA_ENVIAR e RABBITMQ_EXCHANGE_EVENTOS. Ancorar no
+            # inicio fazia o script ignorar os dois e dizer que as filas da
+            # execucao nao eram referenciadas por ninguem.
+            m = re.match(r'\s+([A-Z0-9_]*(?:FILA|EXCHANGE)[A-Z0-9_]*):\s*"(.+)"', linha)
             if not m:
                 continue
             chave, valor = m.group(1), m.group(2)
-            alvo = refs_fila if chave.startswith("FILA") else refs_exchange
+            alvo = refs_fila if "FILA" in chave else refs_exchange
             alvo[valor] = str(arquivo.relative_to(K8S))
 
     problemas = []
@@ -71,12 +98,23 @@ def main() -> int:
 
     orfas = sorted(
         q for q in filas - set(refs_fila)
-        if not q.startswith("dlq.") and q not in SEM_CONSUMIDOR_DE_PROPOSITO
+        if not q.startswith("dlq.") and q not in SEM_REFERENCIA_DE_PROPOSITO
     )
     for nome in orfas:
         problemas.append(f"fila '{nome}' existe no broker mas nenhum ConfigMap a referencia")
 
     print(f"filas no broker: {len(filas)}  |  referenciadas nos manifestos: {len(refs_fila)}")
+
+    toleradas = sorted(SEM_REFERENCIA_DE_PROPOSITO.keys() & filas)
+    if toleradas:
+        print(f"sem referencia de proposito: {', '.join(toleradas)}")
+
+    fantasmas = sorted(SEM_REFERENCIA_DE_PROPOSITO.keys() - filas)
+    for nome in fantasmas:
+        problemas.append(
+            f"fila '{nome}' esta na lista de excecoes mas nao existe mais no "
+            "definitions.json — tire da lista"
+        )
 
     if problemas:
         print()

@@ -9,14 +9,27 @@ metadata:
     app.kubernetes.io/component: api
     app.kubernetes.io/part-of: oficina-fase4
 data:
+  # stdout em JSON. Sem isto o Laravel escreve em storage/logs dentro do
+  # pod: `kubectl logs` vem vazio e o New Relic nao coleta nada.
+  LOG_CHANNEL: "stdout_json"
+  REDIS_CLIENT: "predis"
   REDIS_HOST: "execucao-redis"
   REDIS_PORT: "6379"
-  MONGO_HOST: "execucao-mongo"
-  MONGO_PORT: "27017"
+  # MONGO_URI NAO fica aqui.
+  #
+  # config/mongodb.php le MONGO_URI e so ela — MONGO_USERNAME e MONGO_PASSWORD
+  # nao entram na conexao. Como o StatefulSet cria o Mongo com
+  # MONGO_INITDB_ROOT_USERNAME/PASSWORD, a URI precisa levar usuario e senha
+  # dentro dela, e isso e segredo: vai no Secret execucao-mongo-credentials,
+  # chave `uri`, injetada no Deployment e no worker.
+  #
+  # No compose funciona sem credencial porque aquele Mongo sobe sem
+  # autenticacao. No cluster, URI sem credencial falha na primeira escrita.
   MONGO_DATABASE: "oficina_execucao"
   RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   RABBITMQ_VHOST: "/"
-  EXCHANGE_EVENTOS: "oficina.eventos"
-  FILA_ENVIAR_EXECUCAO: "execucao.enviar-para-execucao"
-  FILA_CANCELAR_EXECUCAO: "execucao.cancelar-execucao"
+  # config/rabbitmq.php prefixa tudo com RABBITMQ_.
+  RABBITMQ_EXCHANGE_EVENTOS: "oficina.eventos"
+  RABBITMQ_FILA_ENVIAR: "execucao.enviar-para-execucao"
+  RABBITMQ_FILA_CANCELAR: "execucao.cancelar-execucao"

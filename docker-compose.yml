@@ -4,12 +4,34 @@
 # RabbitMQ (com as filas do contrato ja declaradas), dois Postgres,
 # dois Mongo e um Redis. Cada servico tem o seu banco; nada e compartilhado.
 #
-#   docker compose up -d
+#   docker compose up -d                      so a infraestrutura
+#   docker compose --profile app up -d        infraestrutura + os tres servicos
 #   docker compose ps
 #
 # Painel do RabbitMQ: http://localhost:15672  (guest / guest)
+#
+# ---------------------------------------------------------------------------
+# O profile "app" exige os quatro repositorios como irmaos no disco:
+#
+#   Projetos/
+#   ├── oficina-infra-fase4      <- voce esta aqui
+#   ├── oficina-os-service
+#   ├── oficina-billing-service
+#   └── oficina-execucao-service
+#
+# E o que permite subir a saga inteira numa maquina so, que e o que os
+# trechos 2 e 3 do video precisam mostrar. Cada servico roda a API e os
+# workers em containers separados, espelhando os Deployments do k8s/:
+# quem consome fila nao atende HTTP.
 
 name: oficina-fase4
+
+# Bloco comum dos containers de aplicacao. YAML anchor para nao repetir
+# oito vezes a mesma lista de depends_on.
+x-app-comum: &app-comum
+  restart: unless-stopped
+  networks: [oficina]
+  profiles: [app]
 
 services:
 
@@ -109,6 +131,187 @@ services:
     volumes:
       - execucao_mongo_data:/data/db
     networks: [oficina]
+
+  # ==========================================================================
+  #  APLICACAO — profile "app"
+  # ==========================================================================
+  #
+  # Os nomes de variavel abaixo sao os que cada servico REALMENTE le no seu
+  # config/. Nao invente: o servico cai no default em silencio e consome uma
+  # fila que ninguem publica.
+  #
+  #   os-service   config/messaging.php  -> RABBITMQ_EXCHANGE
+  #   billing      config/mensageria.php -> EXCHANGE_EVENTOS, FILA_*
+  #   execucao     config/rabbitmq.php   -> RABBITMQ_EXCHANGE_EVENTOS, RABBITMQ_FILA_*
+  #
+  # As filas e o exchange ficam no default de cada servico, que ja bate com o
+  # rabbitmq/definitions.json. O que o compose precisa definir e so o que muda
+  # fora da maquina local: enderecos e credenciais.
+
+  # ----------------------------------------------------------- OS Service
+  os-service:
+    <<: *app-comum
+    build: ../oficina-os-service
+    image: oficina-os-service:dev
+    container_name: oficina-os-service
+    command: >
+      sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8080"
+    ports:
+      - "8081:8080"
+    environment: &os-env
+      APP_ENV: local
+      APP_DEBUG: "true"
+      # stdout em JSON: o default do Laravel escreve em arquivo dentro do
+      # container, e ai `docker compose logs` e `kubectl logs` nao mostram nada.
+      LOG_CHANNEL: stdout_json
+      APP_KEY: base64:Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=
+      DB_CONNECTION: pgsql
+      DB_HOST: os-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: os_service
+      DB_USERNAME: os_service
+      DB_PASSWORD: os_service
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_VHOST: "/"
+      RABBITMQ_EXCHANGE: oficina.eventos
+    depends_on:
+      os-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # Consumidor dos eventos da saga. Nao publica nada: toda saida vai para o
+  # outbox, dentro da transacao, e sai pelo os-outbox.
+  os-saga:
+    <<: *app-comum
+    image: oficina-os-service:dev
+    container_name: oficina-os-saga
+    command: ["php", "artisan", "saga:consumir"]
+    environment: *os-env
+    depends_on:
+      os-service:
+        condition: service_started
+
+  # Publicador do outbox. Processo proprio de proposito: este so escreve no
+  # broker, o os-saga so le, e a API nao faz nem um nem outro.
+  os-outbox:
+    <<: *app-comum
+    image: oficina-os-service:dev
+    container_name: oficina-os-outbox
+    command: ["php", "artisan", "saga:publicar-outbox"]
+    environment: *os-env
+    depends_on:
+      os-service:
+        condition: service_started
+
+  # ------------------------------------------------------- Billing Service
+  billing-service:
+    <<: *app-comum
+    build: ../oficina-billing-service
+    image: oficina-billing-service:dev
+    container_name: oficina-billing-service
+    command: >
+      sh -c "php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8080"
+    ports:
+      - "8082:8080"
+    environment: &billing-env
+      APP_ENV: local
+      APP_DEBUG: "true"
+      # stdout em JSON: o default do Laravel escreve em arquivo dentro do
+      # container, e ai `docker compose logs` e `kubectl logs` nao mostram nada.
+      LOG_CHANNEL: stdout_json
+      APP_KEY: base64:Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=
+      DB_CONNECTION: pgsql
+      DB_HOST: billing-postgres
+      DB_PORT: "5432"
+      DB_DATABASE: billing_service
+      DB_USERNAME: billing_service
+      DB_PASSWORD: billing_service
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_VHOST: "/"
+      EXCHANGE_EVENTOS: oficina.eventos
+      # Sandbox. Sem token o billing sobe e so falha ao criar cobranca.
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+    depends_on:
+      billing-postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # Dois workers, um por fila. O acompanhamento do pagamento faz polling
+  # dentro do callback e com prefetch 1 uma cobranca lenta seguraria a fila
+  # de orcamento atras dela. Espelha os dois Deployments do k8s/.
+  billing-orcamento:
+    <<: *app-comum
+    image: oficina-billing-service:dev
+    container_name: oficina-billing-orcamento
+    command: ["php", "artisan", "fila:consumir", "--fila=billing.gerar-orcamento", "--fila=billing.anular-orcamento"]
+    environment: *billing-env
+    depends_on:
+      billing-service:
+        condition: service_started
+
+  billing-cobranca:
+    <<: *app-comum
+    image: oficina-billing-service:dev
+    container_name: oficina-billing-cobranca
+    command: ["php", "artisan", "fila:consumir", "--fila=billing.cobrar-pagamento", "--fila=billing.estornar-pagamento"]
+    environment: *billing-env
+    depends_on:
+      billing-service:
+        condition: service_started
+
+  # ------------------------------------------------------ Execucao Service
+  execucao-service:
+    <<: *app-comum
+    build: ../oficina-execucao-service
+    image: oficina-execucao-service:dev
+    container_name: oficina-execucao-service
+    command: >
+      sh -c "php artisan execucao:criar-indices && php artisan serve --host=0.0.0.0 --port=8080"
+    ports:
+      - "8083:8080"
+    environment: &execucao-env
+      APP_ENV: local
+      APP_DEBUG: "true"
+      # stdout em JSON: o default do Laravel escreve em arquivo dentro do
+      # container, e ai `docker compose logs` e `kubectl logs` nao mostram nada.
+      LOG_CHANNEL: stdout_json
+      APP_KEY: base64:Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyMDA=
+      REDIS_CLIENT: predis
+      REDIS_HOST: execucao-redis
+      REDIS_PORT: "6379"
+      MONGO_URI: mongodb://execucao-mongo:27017
+      MONGO_DATABASE: execucao_service
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_VHOST: "/"
+      RABBITMQ_EXCHANGE_EVENTOS: oficina.eventos
+    depends_on:
+      execucao-redis:
+        condition: service_healthy
+      execucao-mongo:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  execucao-worker:
+    <<: *app-comum
+    image: oficina-execucao-service:dev
+    container_name: oficina-execucao-worker
+    command: ["php", "artisan", "execucao:consumir"]
+    environment: *execucao-env
+    depends_on:
+      execucao-service:
+        condition: service_started
 
 networks:
   oficina:

@@ -46,6 +46,12 @@ spec:
             - configMapRef:
                 name: billing-service-config
           env:
+            # Sem APP_KEY o Laravel estoura MissingAppKeyException.
+            - name: APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: billing-app-key
+                  key: app-key
             - name: APP_ENV
               value: production
             - name: RABBITMQ_USER
