@@ -99,6 +99,10 @@ spec:
                 secretKeyRef:
                   name: observabilidade
                   key: new-relic-license-key
+            # O SDK do OpenTelemetry autentica no New Relic por este header.
+            # $(...) so expande variavel declarada ANTES nesta lista.
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: "api-key=$(NEW_RELIC_LICENSE_KEY)"
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:

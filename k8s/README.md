@@ -64,6 +64,8 @@ tudo isso se perde junto com o cluster e precisa ser recriado.
 | `execucao-mongo-credentials` | `username`, `password`, **`uri`** | Execução e o StatefulSet do Mongo |
 | `observabilidade` | `new-relic-license-key` | todos os serviços |
 
+**Traces no New Relic.** A `new-relic-license-key` do Secret `observabilidade` vira, em cada workload, o header `OTEL_EXPORTER_OTLP_HEADERS=api-key=<chave>` que o SDK do OpenTelemetry usa. O endpoint (`https://otlp.nr-data.net:4318`) e o `OTEL_SERVICE_NAME` ficam no ConfigMap de cada serviço. Sem o endpoint o SDK vira no-op e nenhum span sai do cluster. A chave precisa ser a **License key (INGEST)** da conta; se a conta for da região EU, o endpoint muda para `https://otlp.eu01.nr-data.net:4318`.
+
 O formato do comando, para quem for criar:
 
 ```bash

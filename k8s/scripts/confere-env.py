@@ -61,9 +61,10 @@ TOLERADAS = {
     "APP_KEY": "lida pelo Encrypter via config/app.php do proprio Laravel",
     "LOG_CHANNEL": "lida por config/logging.php do Laravel",
     "LOG_LEVEL": "idem",
-    "NEW_RELIC_LICENSE_KEY": "lida pelo agente do New Relic, nao pelo PHP",
+    "NEW_RELIC_LICENSE_KEY": "nenhum PHP le direto: o workload a usa para montar OTEL_EXPORTER_OTLP_HEADERS",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "lida pelo SDK do OpenTelemetry",
     "OTEL_SERVICE_NAME": "idem",
+    "OTEL_EXPORTER_OTLP_HEADERS": "idem; leva a license key, montada no workload a partir de NEW_RELIC_LICENSE_KEY",
 }
 
 
