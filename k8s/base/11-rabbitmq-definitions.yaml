@@ -277,6 +277,46 @@ data:
           "arguments": {}
         },
         {
+          "source": "oficina.eventos",
+          "vhost": "/",
+          "destination": "os.readmodel.eventos",
+          "destination_type": "queue",
+          "routing_key": "orcamento.*",
+          "arguments": {}
+        },
+        {
+          "source": "oficina.eventos",
+          "vhost": "/",
+          "destination": "os.readmodel.eventos",
+          "destination_type": "queue",
+          "routing_key": "pagamento.*",
+          "arguments": {}
+        },
+        {
+          "source": "oficina.eventos",
+          "vhost": "/",
+          "destination": "os.readmodel.eventos",
+          "destination_type": "queue",
+          "routing_key": "execucao.*",
+          "arguments": {}
+        },
+        {
+          "source": "oficina.eventos",
+          "vhost": "/",
+          "destination": "os.readmodel.eventos",
+          "destination_type": "queue",
+          "routing_key": "aprovacao.*",
+          "arguments": {}
+        },
+        {
+          "source": "oficina.espera",
+          "vhost": "/",
+          "destination": "os.readmodel.eventos",
+          "destination_type": "queue",
+          "routing_key": "aprovacao.expirada",
+          "arguments": {}
+        },
+        {
           "source": "oficina.espera",
           "vhost": "/",
           "destination": "billing.aprovacao-expirada",
