@@ -1,0 +1,694 @@
+{
+  "name": "Oficina Mecanica - Saga (Fase 4)",
+  "description": "Um dashboard para os três serviços: a visão geral mostra o trace ponta a ponta, uma página por serviço mostra o detalhe. Fonte única em oficina-infra-fase4/observabilidade/; contrato em docs/contrato-observabilidade.md.",
+  "permissions": "PUBLIC_READ_WRITE",
+  "pages": [
+    {
+      "name": "Visão geral — trace ponta a ponta",
+      "description": "O mesmo trace atravessando OS, Billing e Execução, e as falhas da saga.",
+      "widgets": [
+        {
+          "title": "Traces recentes e os serviços que atravessam",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 12,
+            "height": 4
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT uniques(service.name) AS 'Serviços', uniqueCount(service.name) AS 'Nº de serviços', count(*) AS 'Spans', filter(count(*), WHERE otel.status_code = 'ERROR') AS 'Spans com erro', max(duration.ms) AS 'Maior span (ms)' FROM Span WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') FACET trace.id SINCE 1 day ago LIMIT 20"
+              }
+            ],
+            "nullValues": {
+              "nullValue": "default"
+            }
+          }
+        },
+        {
+          "title": "Spans por serviço",
+          "layout": {
+            "column": 1,
+            "row": 5,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') FACET service.name TIMESERIES AUTO SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Spans com erro por serviço",
+          "layout": {
+            "column": 7,
+            "row": 5,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND otel.status_code = 'ERROR' FACET service.name TIMESERIES AUTO SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens publicadas por tipo (a saga)",
+          "layout": {
+            "column": 1,
+            "row": 8,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND name LIKE '% publish' FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Latência média publish → process (ms)",
+          "layout": {
+            "column": 7,
+            "row": 8,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT average(duration.ms) FROM Span WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND name LIKE '% process' FACET service.name, name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Falhas de saga (execucao.falhou)",
+          "layout": {
+            "column": 1,
+            "row": 11,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'evento_publicado' AND evento = 'execucao.falhou' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Falhas ao processar mensagem, por serviço",
+          "layout": {
+            "column": 5,
+            "row": 11,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND message = 'falha_ao_processar_mensagem' FACET service.name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens na DLQ, por serviço",
+          "layout": {
+            "column": 9,
+            "row": 11,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name IN ('oficina-os-service', 'oficina-billing-service', 'oficina-execucao-service') AND message LIKE '%enviad%para_dlq' FACET service.name SINCE 1 day ago"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "OS Service",
+      "description": "Orquestrador da saga.",
+      "widgets": [
+        {
+          "title": "Spans por operação (publish / process)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'oficina-os-service' AND (name LIKE '% publish' OR name LIKE '% process') FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Duração média dos spans de mensageria (ms)",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT average(duration.ms) FROM Span WHERE service.name = 'oficina-os-service' AND (name LIKE '% publish' OR name LIKE '% process') FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Spans com erro",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'oficina-os-service' AND otel.status_code = 'ERROR' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Falhas ao processar mensagem",
+          "layout": {
+            "column": 5,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-os-service' AND message = 'falha_ao_processar_mensagem' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens processadas por origem",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-os-service' AND message = 'mensagem_processada' FACET messaging.destination.name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Logs de erro por mensagem",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 12,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-os-service' AND level_name IN ('ERROR', 'CRITICAL') FACET message SINCE 1 day ago LIMIT 20"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Billing Service",
+      "description": "Orçamento e pagamento.",
+      "widgets": [
+        {
+          "title": "Spans por operação (publish / process)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'oficina-billing-service' AND (name LIKE '% publish' OR name LIKE '% process') FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Duração média dos spans de mensageria (ms)",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT average(duration.ms) FROM Span WHERE service.name = 'oficina-billing-service' AND (name LIKE '% publish' OR name LIKE '% process') FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Spans com erro",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'oficina-billing-service' AND otel.status_code = 'ERROR' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Falhas ao processar mensagem",
+          "layout": {
+            "column": 5,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-billing-service' AND message = 'falha_ao_processar_mensagem' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens processadas por origem",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-billing-service' AND message = 'mensagem_processada' FACET messaging.destination.name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Logs de erro por mensagem",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 12,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-billing-service' AND level_name IN ('ERROR', 'CRITICAL') FACET message SINCE 1 day ago LIMIT 20"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Execução Service",
+      "description": "Fila de execução, reparo e compensação.",
+      "widgets": [
+        {
+          "title": "Spans por operação (publish / process)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'oficina-execucao-service' AND (name LIKE '% publish' OR name LIKE '% process') FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Duração média dos spans de mensageria (ms)",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT average(duration.ms) FROM Span WHERE service.name = 'oficina-execucao-service' AND (name LIKE '% publish' OR name LIKE '% process') FACET name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Spans com erro",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Span WHERE service.name = 'oficina-execucao-service' AND otel.status_code = 'ERROR' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Falhas ao processar mensagem",
+          "layout": {
+            "column": 5,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'falha_ao_processar_mensagem' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens processadas por origem",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'mensagem_processada' FACET messaging.destination.name SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Logs de erro por mensagem",
+          "layout": {
+            "column": 1,
+            "row": 7,
+            "width": 12,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND level_name IN ('ERROR', 'CRITICAL') FACET message SINCE 1 day ago LIMIT 20"
+              }
+            ]
+          }
+        },
+        {
+          "title": "OS enfileiradas por prioridade",
+          "layout": {
+            "column": 1,
+            "row": 10,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'os_enfileirada' FACET fila.prioridade SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Eventos publicados por tipo",
+          "layout": {
+            "column": 5,
+            "row": 10,
+            "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'evento_publicado' FACET evento TIMESERIES AUTO SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "execucao.falhou publicados (24h)",
+          "layout": {
+            "column": 1,
+            "row": 13,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'evento_publicado' AND evento = 'execucao.falhou' SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Compensações (CancelarExecucao) por resultado",
+          "layout": {
+            "column": 5,
+            "row": 13,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.pie"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'execucao_cancelamento_tratado' FACET resultado SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Comandos na DLQ",
+          "layout": {
+            "column": 9,
+            "row": 13,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message IN ('mensagem_invalida_enviada_para_dlq', 'comando_invalido_enviado_para_dlq') SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Tempo médio por status (min)",
+          "layout": {
+            "column": 1,
+            "row": 16,
+            "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT average(numeric(os.duracao_segundos)) / 60 AS 'Minutos' FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'os_transicao_status' FACET os.status_anterior SINCE 1 day ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Mensagens repetidas descartadas (idempotência)",
+          "layout": {
+            "column": 9,
+            "row": 16,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [],
+                "query": "SELECT count(*) FROM Log WHERE service.name = 'oficina-execucao-service' AND message = 'mensagem_duplicada_descartada' SINCE 1 day ago"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
