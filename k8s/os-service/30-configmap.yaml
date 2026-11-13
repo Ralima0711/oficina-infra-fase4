@@ -14,6 +14,11 @@ data:
   # stdout em JSON. Sem isto o Laravel escreve em storage/logs dentro do
   # pod: `kubectl logs` vem vazio e o New Relic nao coleta nada.
   LOG_CHANNEL: "stdout_json"
+  # Traces por OTLP/HTTP direto no New Relic (contrato-observabilidade.md, secao 2).
+  # Sem endpoint o SDK vira no-op e nada sai do cluster, mesmo com o codigo pronto.
+  # A license key NAO fica aqui: o header vem do Secret `observabilidade`, no workload.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.nr-data.net:4318"
+  OTEL_SERVICE_NAME: "oficina-os-service"
   DB_CONNECTION: "pgsql"
   DB_HOST: "os-postgres"
   DB_PORT: "5432"

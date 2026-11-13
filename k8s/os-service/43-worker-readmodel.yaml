@@ -74,6 +74,10 @@ spec:
                 secretKeyRef:
                   name: observabilidade
                   key: new-relic-license-key
+            # O SDK do OpenTelemetry autentica no New Relic por este header.
+            # $(...) so expande variavel declarada ANTES nesta lista.
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: "api-key=$(NEW_RELIC_LICENSE_KEY)"
             # O projetor nao toca no Postgres: ele le evento e escreve no
             # Mongo. DB_USERNAME e DB_PASSWORD ficam de fora de proposito —
             # credencial entregue a quem nao usa e a mesma classe de erro que o
