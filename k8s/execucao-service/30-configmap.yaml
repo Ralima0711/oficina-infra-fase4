@@ -12,6 +12,11 @@ data:
   # stdout em JSON. Sem isto o Laravel escreve em storage/logs dentro do
   # pod: `kubectl logs` vem vazio e o New Relic nao coleta nada.
   LOG_CHANNEL: "stdout_json"
+  # Sem config/cache.php e config/session.php o Laravel usa o driver
+  # `database`, e a Execucao nao tem banco SQL: toda rota daria 500,
+  # inclusive a probe de /api/health.
+  CACHE_STORE: "array"
+  SESSION_DRIVER: "array"
   # Traces por OTLP/HTTP direto no New Relic (contrato-observabilidade.md, secao 2).
   # Sem endpoint o SDK vira no-op e nada sai do cluster, mesmo com o codigo pronto.
   # A license key NAO fica aqui: o header vem do Secret `observabilidade`, no workload.

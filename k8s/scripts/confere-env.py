@@ -61,6 +61,8 @@ TOLERADAS = {
     "APP_KEY": "lida pelo Encrypter via config/app.php do proprio Laravel",
     "LOG_CHANNEL": "lida por config/logging.php do Laravel",
     "LOG_LEVEL": "idem",
+    "CACHE_STORE": "lida pelo config/cache.php padrao do Laravel, que vale quando o servico nao tem o seu (caso da Execucao)",
+    "SESSION_DRIVER": "idem, config/session.php padrao do Laravel",
     "NEW_RELIC_LICENSE_KEY": "nenhum PHP le direto: o workload a usa para montar OTEL_EXPORTER_OTLP_HEADERS",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "lida pelo SDK do OpenTelemetry",
     "OTEL_SERVICE_NAME": "idem",
