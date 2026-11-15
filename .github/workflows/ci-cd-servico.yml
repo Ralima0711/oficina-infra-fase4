@@ -274,17 +274,27 @@ jobs:
         with:
           php-version: ${{ inputs.php-version }}
           coverage: none
-          tools: phpmd
+          # Versao fixa. Sem ela o setup-php instala a 3.x mais recente, que trocou
+          # a linha de comando por subcomandos (`phpmd analyze`): a chamada abaixo
+          # parou com "Command ... is not defined" e o job ficou vermelho sem medir
+          # nada. Sintaxe e codigos de saida (0 ok, 2 violacao) sao os da 2.x.
+          tools: phpmd:2.15.0
 
       - name: Escrever o ruleset
+        env:
+          LIMITE: ${{ inputs.complexidade-maxima }}
         run: |
-          cat > phpmd-fase4.xml <<'XML'
+          # O PHPMD reporta complexidade MAIOR OU IGUAL ao reportLevel; a regra
+          # php:S1541, que este limite espelha, so reprova ACIMA dele. Por isso
+          # reportLevel = limite + 1: funcao com exatamente 10 passa.
+          NIVEL=$((LIMITE + 1))
+          cat > phpmd-fase4.xml <<XML
           <?xml version="1.0"?>
           <ruleset name="Oficina Fase 4" xmlns="http://pmd.sf.net/ruleset/1.0.0">
             <description>Complexidade ciclomatica das funcoes.</description>
             <rule ref="rulesets/codesize.xml/CyclomaticComplexity">
               <properties>
-                <property name="reportLevel" value="${{ inputs.complexidade-maxima }}"/>
+                <property name="reportLevel" value="$NIVEL"/>
               </properties>
             </rule>
           </ruleset>
