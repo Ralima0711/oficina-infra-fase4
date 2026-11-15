@@ -190,6 +190,13 @@ services:
       # alcanca ninguem e devolve billing e execucao como "indisponivel".
       BILLING_URL: http://billing-service:8080
       EXECUCAO_URL: http://execucao-service:8080
+      # Traces por OTLP/HTTP (contrato-observabilidade.md). Vazio no .env = SDK
+      # no-op, nada sai da maquina. Para o New Relic, no .env:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net:4318
+      #   OTEL_EXPORTER_OTLP_HEADERS=api-key=<License key INGEST>
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: oficina-os-service
     depends_on:
       os-postgres:
         condition: service_healthy
@@ -273,6 +280,13 @@ services:
       # .env nao muda nada: a variavel nunca chega no processo.
       MP_POLL_INTERVAL_SECONDS: ${MP_POLL_INTERVAL_SECONDS:-30}
       MP_POLL_MAX_ATTEMPTS: ${MP_POLL_MAX_ATTEMPTS:-20}
+      # Traces por OTLP/HTTP (contrato-observabilidade.md). Vazio no .env = SDK
+      # no-op, nada sai da maquina. Para o New Relic, no .env:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net:4318
+      #   OTEL_EXPORTER_OTLP_HEADERS=api-key=<License key INGEST>
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: oficina-billing-service
     depends_on:
       billing-postgres:
         condition: service_healthy
@@ -336,6 +350,13 @@ services:
       RABBITMQ_PASSWORD: guest
       RABBITMQ_VHOST: "/"
       RABBITMQ_EXCHANGE_EVENTOS: oficina.eventos
+      # Traces por OTLP/HTTP (contrato-observabilidade.md). Vazio no .env = SDK
+      # no-op, nada sai da maquina. Para o New Relic, no .env:
+      #   OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.nr-data.net:4318
+      #   OTEL_EXPORTER_OTLP_HEADERS=api-key=<License key INGEST>
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_SERVICE_NAME: oficina-execucao-service
     depends_on:
       execucao-redis:
         condition: service_healthy
