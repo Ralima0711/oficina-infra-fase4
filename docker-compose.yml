@@ -262,6 +262,11 @@ services:
       EXCHANGE_EVENTOS: oficina.eventos
       # Sandbox. Sem token o billing sobe e so falha ao criar cobranca.
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      # O config/services.php do Billing le estas duas. Sem elas aqui, o
+      # container fica preso no padrao 30s x 20 = 10 minutos, e ajustar o
+      # .env nao muda nada: a variavel nunca chega no processo.
+      MP_POLL_INTERVAL_SECONDS: ${MP_POLL_INTERVAL_SECONDS:-30}
+      MP_POLL_MAX_ATTEMPTS: ${MP_POLL_MAX_ATTEMPTS:-20}
     depends_on:
       billing-postgres:
         condition: service_healthy
@@ -313,6 +318,12 @@ services:
       REDIS_PORT: "6379"
       MONGO_URI: mongodb://execucao-mongo:27017
       MONGO_DATABASE: execucao_service
+      # A Execucao nao tem config/cache.php nem config/session.php: o Laravel
+      # cai no padrao `database`, e este servico nao tem banco SQL. Sem isto
+      # TODA rota responde 500 (Undefined array key "driver"), ate o /health.
+      # Vale para a API e para o worker, que reusa este bloco pela ancora.
+      CACHE_STORE: array
+      SESSION_DRIVER: array
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: "5672"
       RABBITMQ_USER: guest
