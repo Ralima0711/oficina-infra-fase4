@@ -184,6 +184,12 @@ services:
       # container. Banco declarado e nunca conectado.
       MONGO_DSN: mongodb://os-mongo:27017
       MONGO_DATABASE: os_read_model
+      # Consulta agregada (GET /ordens-servico/{id}/completa, API Composition).
+      # O padrao do config/services.php e a porta 80, que e a do Service no
+      # cluster. Aqui os dois escutam na 8080: sem isto a composicao nunca
+      # alcanca ninguem e devolve billing e execucao como "indisponivel".
+      BILLING_URL: http://billing-service:8080
+      EXECUCAO_URL: http://execucao-service:8080
     depends_on:
       os-postgres:
         condition: service_healthy
