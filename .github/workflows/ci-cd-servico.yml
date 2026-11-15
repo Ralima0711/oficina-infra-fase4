@@ -4,10 +4,11 @@
 # Um lugar só para mudar o pipeline, em vez de três arquivos que divergem em silêncio.
 #
 # O que ele faz, nesta ordem:
-#   1. testes      — roda a suíte com cobertura e REPROVA abaixo do mínimo
-#   2. sonar       — análise e quality gate (pulado se não houver chave do projeto)
-#   3. imagem      — build e push no Docker Hub (só na main)
-#   4. deploy      — aplica os manifestos no EKS (só na main, e só se pedido)
+#   1. testes       — roda a suíte com cobertura e REPROVA abaixo do mínimo
+#   2. complexidade — PHPMD nos arquivos que o PR altera (só em pull request)
+#   3. sonar        — análise e quality gate (pulado se não houver chave do projeto)
+#   4. imagem       — build e push no Docker Hub (só na main)
+#   5. deploy       — aplica os manifestos no EKS (só na main, e só se pedido)
 #
 # A lição da Fase 3 está no job de deploy: ele NÃO tem ramo silencioso. Se faltar
 # credencial, ele falha com mensagem clara. Na fase passada o job existia nos quatro
@@ -76,6 +77,20 @@ on:
         required: false
         type: string
         default: "us-east-1"
+      complexidade-maxima:
+        description: >
+          Complexidade ciclomatica maxima por funcao, cobrada pelo PHPMD nos
+          arquivos que o pull request altera. 10 e o mesmo limite da regra
+          php:S1541, que o Sonar cobraria se o plano permitisse quality
+          profile proprio.
+        required: false
+        type: number
+        default: 10
+      pasta-fonte:
+        description: Pasta do codigo de producao que o PHPMD mede.
+        required: false
+        type: string
+        default: "app"
     secrets:
       DOCKERHUB_USERNAME:
         required: false
@@ -234,6 +249,92 @@ jobs:
           path: build/logs/
           retention-days: 7
 
+  # ------------------------------------------------------------ complexidade
+  complexidade:
+    name: Complexidade ciclomática
+    # A terceira métrica da Aula 4 é cobrada aqui, e não no Sonar, porque o plano
+    # gratuito do SonarQube Cloud não deixa ATRIBUIR quality profile próprio a um
+    # projeto — e sem profile próprio a regra php:S1541 fica desativada, que é como
+    # ela vem de fábrica. Em vez de documentar um controle que não executa, o
+    # controle mora no pipeline.
+    #
+    # Só em pull request, e só nos arquivos do diff, de propósito: medir o
+    # repositório inteiro reprovaria código que já estava lá antes da regra existir,
+    # e um gate que nasce vermelho é desligado na primeira vez que incomoda. O
+    # limite vale para o que o PR altera; o resto sobe junto, arquivo por arquivo.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar o PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php-version }}
+          coverage: none
+          tools: phpmd
+
+      - name: Escrever o ruleset
+        run: |
+          cat > phpmd-fase4.xml <<'XML'
+          <?xml version="1.0"?>
+          <ruleset name="Oficina Fase 4" xmlns="http://pmd.sf.net/ruleset/1.0.0">
+            <description>Complexidade ciclomatica das funcoes.</description>
+            <rule ref="rulesets/codesize.xml/CyclomaticComplexity">
+              <properties>
+                <property name="reportLevel" value="${{ inputs.complexidade-maxima }}"/>
+              </properties>
+            </rule>
+          </ruleset>
+          XML
+          cat phpmd-fase4.xml
+
+      - name: Medir os arquivos que o PR altera
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          FONTE: ${{ inputs.pasta-fonte }}
+          LIMITE: ${{ inputs.complexidade-maxima }}
+        run: |
+          git fetch --no-tags -q origin "$BASE" 2>/dev/null || true
+
+          mudados=$(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- "$FONTE" \
+                    | grep -E '[.]php$' || true)
+
+          if [ -z "$mudados" ]; then
+            echo "Nenhum arquivo PHP de '$FONTE' mudou neste PR. Nada a medir."
+            exit 0
+          fi
+
+          echo "Limite: $LIMITE"
+          echo "Arquivos medidos:"
+          echo "$mudados" | sed 's/^/  /'
+          echo ""
+
+          lista=$(echo "$mudados" | paste -sd, -)
+
+          set +e
+          phpmd "$lista" text phpmd-fase4.xml
+          codigo=$?
+          set -e
+
+          case "$codigo" in
+            0)
+              echo "aprovado: nenhuma funcao acima de $LIMITE nos arquivos deste PR"
+              ;;
+            2)
+              echo ""
+              echo "::error::Funcao com complexidade ciclomatica acima de $LIMITE num arquivo deste PR."
+              echo "O limite vale para o que o PR altera, nao para o codigo que ja estava la."
+              exit 1
+              ;;
+            *)
+              echo "::error::O phpmd nao conseguiu rodar (codigo $codigo)."
+              exit 1
+              ;;
+          esac
+
   # ------------------------------------------------------------------- sonar
   sonar:
     name: SonarQube e quality gate
@@ -261,13 +362,15 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ inputs.sonar-host-url }}
 
-      # Das três métricas da Aula 4, duas são condição direta do quality gate:
-      # cobertura e débito técnico (Maintainability Rating). A complexidade
-      # ciclomática NÃO é — no Sonar ela é medida, não rating, e o gate só aceita
-      # rating e percentual. Quem a enforça é a regra php:S1541 (max = 10) no
-      # quality profile: função acima do limite vira issue, issue derruba o
-      # Maintainability Rating, e aí o gate reprova. Detalhes no
-      # docs/sonar-quality-gate.md do oficina-infra-fase4.
+      # Das três métricas da Aula 4, duas vêm daqui: cobertura (80% em New Code) e
+      # débito técnico (Maintainability Rating A). As duas já são condição do
+      # quality gate `Sonar way`, que é o que os três projetos usam.
+      #
+      # A terceira, complexidade ciclomática, NÃO vem daqui. No Sonar ela é medida,
+      # não rating, e o gate só aceita rating e percentual; quem a cobraria é a
+      # regra php:S1541 num quality profile próprio — e o plano gratuito não deixa
+      # atribuir profile nem gate customizado a projeto. Ela é cobrada no job
+      # `complexidade`, com PHPMD. Detalhes no docs/sonar-quality-gate.md.
       #
       # Aqui a gente só espera o veredito e falha se ele reprovar.
       - name: Esperar o quality gate
