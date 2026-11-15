@@ -3,30 +3,54 @@
 **Grupo 77 · as três métricas da Aula 4, traduzidas para o que o Sonar realmente aceita**
 
 A Aula 4 destaca três métricas: **cobertura de testes**, **complexidade ciclomática** e
-**débito técnico**. Duas delas entram direto no quality gate. A terceira não — e é a
-primeira coisa que vale entender, porque uma configuração ingênua diz que cobre as três
-quando na verdade cobre duas.
+**débito técnico**. Duas entram no quality gate do Sonar. A terceira não — e não por
+escolha nossa.
 
 ---
 
-## Por que complexidade ciclomática não entra no gate
+## O limite do plano, medido em 15/11
 
-No Sonar, complexidade ciclomática é uma **medida** — um número por função, por arquivo,
-por projeto. O quality gate só aceita condições sobre **ratings** (A a E) e percentuais.
-Não existe condição "complexidade ciclomática máxima" para escolher.
+A organização está no **plano gratuito** do SonarQube Cloud. Ele analisa, mostra tudo e
+aplica o quality gate embutido, mas recusa duas coisas, com esta mensagem:
 
-Quem enforça complexidade é uma **regra do quality profile**: se uma função passa do
-limite, vira *issue*. Aí sim o gate pega, pela condição de **Maintainability Rating**,
-porque issue de manutenibilidade empurra o rating para baixo.
+> *You are exploring a paid feature. Your current plan does not allow you to assign
+> custom Quality gates / Quality profiles to projects.*
 
-Então o caminho é:
+Dá para **criar** um gate e um profile próprios. Não dá para **atribuir** nenhum dos dois
+a um projeto. Na prática:
+
+| O que a gente queria | Dá no plano gratuito? | O que ficou |
+|---|---|---|
+| Quality gate `Oficina Fase 4` | não | o `Sonar way` embutido, que já cobra as mesmas condições |
+| Quality profile com `php:S1541` em `max = 10` | não | job `complexidade` no pipeline, com PHPMD |
+
+Está escrito aqui em vez de omitido porque a versão anterior deste documento mandava
+fazer as duas coisas, e as duas eram impossíveis. Documento que descreve um controle que
+não executa é o mesmo erro do job de deploy da Fase 3.
+
+---
+
+## Por que complexidade ciclomática não entra num quality gate
+
+Vale entender, independente de plano: no Sonar, complexidade ciclomática é uma **medida**
+— um número por função, por arquivo, por projeto. O quality gate só aceita condições sobre
+**ratings** (A a E) e percentuais. Não existe condição "complexidade ciclomática máxima"
+para escolher.
+
+Quem a enforçaria é uma **regra do quality profile** (`php:S1541`): função acima do limite
+vira *issue*, issue de manutenibilidade derruba o **Maintainability Rating**, e aí o gate
+pega. O caminho seria:
 
 ```
 regra no quality profile  →  issue  →  Maintainability Rating  →  quality gate  →  merge bloqueado
 ```
 
-Vale saber disso na defesa: a pergunta "como vocês garantem complexidade?" tem uma
-resposta boa, que é essa, e uma ruim, que é apontar para um gráfico.
+Duas coisas quebram esse caminho aqui. A regra `php:S1541` vem **desativada** no
+`Sonar way` de fábrica — conferido na tela da regra, que diz *"This rule isn't activated
+on any quality profiles"*, com limite padrão 20. E ativá-la exige um profile próprio, que
+o plano não deixa atribuir.
+
+Por isso ela é cobrada no pipeline. Veja a Parte 3.
 
 ---
 
@@ -62,20 +86,22 @@ valor passa por arquivo nem por histórico de shell.
 
 ---
 
-## Parte 2 — O quality gate
+## Parte 2 — O quality gate é o `Sonar way`, e ele basta
 
-Em **Quality Gates → Create**, nome `Oficina Fase 4`, condições em **New Code**:
+Não há nada a criar. O gate embutido, que todo projeto novo recebe, tem exatamente estas
+condições, todas em **New Code**:
 
-| Métrica | Condição | Por quê |
-|---|---|---|
-| **Coverage** | menor que **80%** → reprova | É o número do enunciado |
-| **Maintainability Rating** | pior que **A** → reprova | É o **débito técnico**, e é por aqui que a complexidade chega |
-| Reliability Rating | pior que **A** → reprova | Bug novo não entra |
-| Security Rating | pior que **A** → reprova | |
-| Security Hotspots Reviewed | menor que **100%** → reprova | Barato: obriga alguém a olhar, não a corrigir |
-| Duplicated Lines | maior que **3%** → reprova | Copiar e colar entre serviços é o risco real aqui |
+| Métrica | Condição |
+|---|---|
+| **Coverage** | menor que **80%** → reprova |
+| **Maintainability Rating** | pior que **A** → reprova (é o **débito técnico**) |
+| Reliability Rating | pior que **A** → reprova |
+| Security Rating | pior que **A** → reprova |
+| Security Hotspots Reviewed | menor que **100%** → reprova |
+| Duplicated Lines | maior que **3%** → reprova |
 
-Depois: **Projects** → adicionar os três.
+É a mesma tabela que a gente ia montar à mão. A única coisa que o gate próprio daria é o
+nome, e o nome não reprova nada.
 
 > **New Code, não Overall.** O gate avalia só o que o PR mudou. Em Overall, um
 > repositório que começa em 40% reprova todo PR até alguém fazer um mutirão — e aí a
@@ -83,36 +109,45 @@ Depois: **Projects** → adicionar os três.
 
 ---
 
-## Parte 3 — A regra de complexidade
+## Parte 3 — A complexidade mora no pipeline
 
-Sem isto, o gate acima cobre cobertura e débito técnico, mas **não** complexidade.
+O job `complexidade` do `ci-cd-servico.yml` roda **PHPMD** com a regra
+`CyclomaticComplexity` em `reportLevel = 10` — o mesmo limite que `php:S1541` teria.
 
-1. **Quality Profiles** → PHP → o perfil *Sonar way* → **Copy**, com o nome
-   `Oficina Fase 4 — PHP`
-2. Procurar a regra **"Cyclomatic Complexity of functions should not be too high"**
-   (chave `php:S1541`)
-3. Ativar, com o parâmetro **`max = 10`**
-4. **Projects** → aplicar o perfil aos três serviços
+Duas decisões dentro dele:
 
-Dez é o limite clássico de McCabe e é o que a maioria dos times usa. Método que passa
-disso quase sempre tem mais de uma responsabilidade — e, no nosso caso, o lugar mais
-provável de isso aparecer é o orquestrador da saga, que é exatamente onde a gente **não**
-quer um método difícil de seguir.
+**Só em pull request, e só nos arquivos do diff.** Medir o repositório inteiro hoje
+reprovaria código que já estava lá antes da regra existir. Em 15/11 o OS Service tinha
+zero funções acima de 10 em 255; o Billing tinha 7 e a Execução 1. Um gate que nasce
+vermelho é desligado na primeira vez que incomoda — e aí não sobra gate nenhum. O limite
+vale para o que o PR altera, e o resto sobe junto, arquivo por arquivo.
 
-> Se a chave da regra não bater, procure por *"Cyclomatic Complexity"* na busca de regras
-> do perfil PHP. O nome é estável, a chave pode variar entre versões.
+**Reprova de verdade.** O job falha, o check fica vermelho, o PR não entra. Não é
+relatório.
+
+Dez é o limite clássico de McCabe. Método que passa disso quase sempre tem mais de uma
+responsabilidade — e o lugar mais provável de isso aparecer é o orquestrador da saga, que
+é exatamente onde a gente **não** quer um método difícil de seguir.
+
+Os limites são inputs do workflow, então um serviço pode apertar sem mexer nos outros:
+
+```yaml
+complexidade-maxima: 10   # padrão
+pasta-fonte: app          # padrão
+```
 
 ---
 
 ## Parte 4 — Fechar o circuito
 
-O gate existe mas não bloqueia nada até virar **required status check**:
+Os checks existem mas não bloqueiam nada até virarem **required status check**:
 
 Em cada um dos três repositórios → **Settings → Branches → main → Edit** →
-*Require status checks to pass before merging* → marcar o check do Sonar.
+*Require status checks to pass before merging* → marcar `SonarQube e quality gate` e
+`Complexidade ciclomática`.
 
-Ele só aparece na lista **depois que rodar pelo menos uma vez**. Então: mergear um PR
-qualquer primeiro, deixar o pipeline rodar, e aí voltar aqui.
+Cada um só aparece na lista **depois de rodar pelo menos uma vez**. Então: deixar um PR
+rodar o pipeline inteiro primeiro, e aí voltar aqui.
 
 ---
 
@@ -120,9 +155,9 @@ qualquer primeiro, deixar o pipeline rodar, e aí voltar aqui.
 
 | Métrica da Aula 4 | Como é garantida | Onde reprova |
 |---|---|---|
-| Cobertura de testes | duas vezes: o gate local do pipeline lê o `clover.xml` e reprova abaixo de 80%, e o Sonar reprova de novo | job `testes` e job `sonar` |
+| Cobertura de testes | duas vezes: o gate do pipeline lê o `clover.xml` e reprova abaixo do mínimo do serviço, e o `Sonar way` reprova de novo abaixo de 80% em New Code | job `testes` e job `sonar` |
 | Débito técnico | Maintainability Rating A em New Code | job `sonar` |
-| Complexidade ciclomática | regra `php:S1541` com `max = 10` → issue → Maintainability Rating | job `sonar` |
+| Complexidade ciclomática | PHPMD com limite 10 nos arquivos que o PR altera | job `complexidade` |
 
 A cobertura é checada duas vezes de propósito. O gate local vale mesmo sem Sonar
 configurado, e falha no job do próprio serviço em vez de vir de um serviço externo
