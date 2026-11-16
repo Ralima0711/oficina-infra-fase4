@@ -74,11 +74,15 @@ spec:
               command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
             initialDelaySeconds: 15
             periodSeconds: 10
+            # O mongosh leva mais de 1 s para subir; com o padrao o pod reiniciava em loop.
+            timeoutSeconds: 15
           livenessProbe:
             exec:
               command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
             initialDelaySeconds: 40
             periodSeconds: 20
+            # O mongosh leva mais de 1 s para subir; com o padrao o pod reiniciava em loop.
+            timeoutSeconds: 15
           resources:
             requests:
               cpu: 100m
