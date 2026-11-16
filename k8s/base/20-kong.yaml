@@ -98,14 +98,19 @@ data:
             strip_path: false
 
     # O token do cliente e assinado em RS256 pela Lambda, que guarda a chave
-    # privada. Aqui entra so a publica, pela env JWT_PUBLIC_KEY, montada do
-    # Secret os-jwt. Chave nenhuma fica neste arquivo.
+    # privada. Aqui entra so a publica, vinda do Secret os-jwt. Chave nenhuma
+    # fica neste arquivo: o init container do Deployment troca o marcador
+    # abaixo pela chave. Nao da para usar {vault://env/...} aqui: no Kong 3.6
+    # o rsa_public_key nao e campo "referenceable", e o texto do vault e
+    # validado como se fosse a chave - o pod entra em CrashLoopBackOff
+    # ("rsa_public_key: invalid key"). Visto no primeiro deploy real, 15/11.
     consumers:
       - username: cliente-oficina
         jwt_secrets:
           - key: oficina-lambda-auth
             algorithm: RS256
-            rsa_public_key: "{vault://env/jwt-public-key}"
+            rsa_public_key: |
+              __JWT_PUBLIC_KEY__
 
     plugins:
       # Um id por requisicao, propagado ao servico. E o que permite casar um
@@ -173,6 +178,34 @@ spec:
         app.kubernetes.io/component: gateway
         app.kubernetes.io/part-of: oficina-fase4
     spec:
+      # Monta o kong.yml final: copia o do ConfigMap trocando __JWT_PUBLIC_KEY__
+      # pela chave publica do Secret, com a mesma indentacao. Mesma imagem do
+      # Kong, para nao baixar outra so por causa do awk.
+      initContainers:
+        - name: montar-config
+          image: kong:3.6
+          command:
+            - sh
+            - -c
+            - >-
+              awk '/__JWT_PUBLIC_KEY__/ {
+              ind = substr($0, 1, index($0, "__") - 1);
+              n = split(ENVIRON["JWT_PUBLIC_KEY"], l, "\n");
+              for (i = 1; i <= n; i++) if (l[i] != "") print ind l[i];
+              next } { print }'
+              /kong/template/kong.yml > /kong/declarativo/kong.yml
+          env:
+            - name: JWT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: os-jwt
+                  key: public-key
+          volumeMounts:
+            - name: template
+              mountPath: /kong/template
+              readOnly: true
+            - name: declarativo
+              mountPath: /kong/declarativo
       containers:
         - name: kong
           image: kong:3.6
@@ -197,14 +230,6 @@ spec:
               value: /dev/stdout
             - name: KONG_PROXY_ERROR_LOG
               value: /dev/stderr
-            - name: KONG_VAULTS
-              value: "env"
-            # Lida como {vault://env/jwt-public-key} no kong.yml.
-            - name: JWT_PUBLIC_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: os-jwt
-                  key: public-key
           volumeMounts:
             - name: declarativo
               mountPath: /kong/declarativo
@@ -229,6 +254,8 @@ spec:
               cpu: 500m
               memory: 512Mi
       volumes:
-        - name: declarativo
+        - name: template
           configMap:
             name: kong-declarativo
+        - name: declarativo
+          emptyDir: {}

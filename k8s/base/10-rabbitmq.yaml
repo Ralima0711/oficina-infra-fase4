@@ -67,16 +67,49 @@ spec:
               subPath: definitions.json
             - name: data
               mountPath: /var/lib/rabbitmq
+          # O load_definitions do rabbitmq.conf importa o definitions.json, que so
+          # tem o guest - e com definicoes no boot o RabbitMQ NAO cria o
+          # RABBITMQ_DEFAULT_USER. Como o guest so aceita conexao local, todo
+          # servico tomava ACCESS_REFUSED. O hook garante o usuario do Secret a
+          # cada subida; precisa ser a cada subida porque /var/lib/rabbitmq e
+          # emptyDir e some quando o pod reinicia. Visto no deploy de 15/11.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  # O postStart roda logo que o container nasce: o no Erlang pode
+                  # nem ter subido ("not running at all") ou ainda estar
+                  # importando as definicoes. Por isso a sequencia inteira se
+                  # repete ate dar certo (~5 min no maximo), com a saida em
+                  # /var/lib/rabbitmq/poststart.log, que sobrevive a um restart
+                  # do container dentro do mesmo pod. Antes de qualquer
+                  # rabbitmqctl, espera o SERVIDOR criar o .erlang.cookie: se o
+                  # CLI chega primeiro num volume vazio, ele cria o cookie como
+                  # root e o servidor encerra (exit 0) no primeiro boot.
+                  - >-
+                    U="$RABBITMQ_DEFAULT_USER"; P="$RABBITMQ_DEFAULT_PASS"; L=/var/lib/rabbitmq/poststart.log; i=0;
+                    until [ -s /var/lib/rabbitmq/.erlang.cookie ]; do i=$((i+1)); [ "$i" -ge 60 ] && exit 1; sleep 2; done; i=0;
+                    until (rabbitmqctl -q await_startup --timeout 10 &&
+                    (rabbitmqctl -q add_user "$U" "$P" || rabbitmqctl -q change_password "$U" "$P") &&
+                    rabbitmqctl -q set_permissions -p / "$U" ".*" ".*" ".*" &&
+                    rabbitmqctl -q set_user_tags "$U" administrator) >>"$L" 2>&1;
+                    do i=$((i+1)); [ "$i" -ge 30 ] && exit 1; sleep 10; done; echo "usuario ok" >>"$L"
+          # timeoutSeconds 15: o padrao de 1 s nao cabe no rabbitmq-diagnostics
+          # num t3.medium, e o kubelet matava o broker em loop.
           readinessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]
             initialDelaySeconds: 20
             periodSeconds: 10
+            timeoutSeconds: 15
           livenessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "-q", "check_running"]
             initialDelaySeconds: 60
             periodSeconds: 30
+            timeoutSeconds: 15
           resources:
             requests: { cpu: "100m", memory: "256Mi" }
             limits:   { cpu: "500m", memory: "512Mi" }
